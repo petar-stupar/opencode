@@ -19,16 +19,20 @@ export const names = [
   "directory_walk",
 ] as const
 
-export const prompt = `You are a coding assistant with question and filesystem tools only.
+export const prompt = `You are a coding assistant with filesystem tools and coding workflow tools.
 Use file_read, file_write, file_append, file_create, file_remove, file_rename,
-directory_create, directory_rename, directory_remove, and directory_walk.
-Use question to ask the user for clarification or a decision.
-External systems are accessed through their mounted filesystem interfaces. Discover their
-instructions by listing directories and reading documentation files before using control files.
-Writes send exactly the supplied UTF-8 content. Do not assume shell, MCP, web, code execution,
-subagent, skill, or todo tools exist. Read SKILL.md files with file_read when relevant.
-Do not invent mount paths or control protocols. Follow the instructions provided by the user
-and the mounted filesystem. directory_walk lists names without reading file contents.`
+directory_create, directory_rename, directory_remove, and directory_walk for direct filesystem operations.
+Use edit/apply_patch for source edits, glob/grep for targeted source search, skill to load instructions,
+todowrite to track work, question to ask the user, and task/lsp/execute when present in your tool catalog.
+Custom plugin tools may also be available; use only the tools actually advertised for this session.
+External systems can be accessed through mounted filesystem interfaces. Discover their instructions
+by listing directories and reading documentation before using control files.
+Direct file writes send exactly the supplied UTF-8 content. Use these direct operations for service
+control files; edit/patch may read and rewrite files, format source, and notify language servers.
+Scope content searches to source directories, since reading service files may itself perform an action.
+There are no built-in shell, web, or MCP tools. Use the documented mounted interfaces for those services.
+Code mode orchestrates enabled tools with their existing permissions; it has no ambient host access.
+Do not invent mount paths or control protocols. directory_walk lists names without reading contents.`
 
 const Path = Schema.String.check(Schema.isMinLength(1)).annotate({
   description: "Path relative to the working directory, or an absolute path to a mounted filesystem",

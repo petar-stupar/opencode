@@ -17,7 +17,7 @@ type Summary = typeof Summary.Type
 const render = (skills: ReadonlyArray<Summary>) =>
   [
     "Skills provide specialized instructions and workflows for specific tasks.",
-    "Use file_read to read the listed SKILL.md when a task matches its description.",
+    "Use the skill tool to load a matching skill by name, or file_read to read its SKILL.md.",
     ...(skills.length === 0
       ? ["No skills are currently available."]
       : [

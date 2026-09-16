@@ -61,7 +61,7 @@ describe("LocationServiceMap", () => {
     ),
   )
 
-  it.live("isolates provider policy while restricting tools in every location", () =>
+  it.live("isolates provider policy while exposing built-ins and application tools in every location", () =>
     Effect.acquireRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
       (dirs) => Effect.promise(() => Promise.all(dirs.map((dir) => dir[Symbol.asyncDispose]())).then(() => undefined)),
@@ -106,32 +106,46 @@ describe("LocationServiceMap", () => {
           const blockedState = yield* update(blocked.path)
           expect(blockedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(false)
           expect(blockedState.tools.map((tool) => tool.name).sort()).toEqual([
+            "application_context",
+            "apply_patch",
             "directory_create",
             "directory_remove",
             "directory_rename",
             "directory_walk",
+            "edit",
             "file_append",
             "file_create",
             "file_read",
             "file_remove",
             "file_rename",
             "file_write",
+            "glob",
+            "grep",
             "question",
+            "skill",
+            "todowrite",
           ])
           const allowedState = yield* update(allowed.path)
           expect(allowedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(true)
           expect(allowedState.tools.map((tool) => tool.name).sort()).toEqual([
+            "application_context",
+            "apply_patch",
             "directory_create",
             "directory_remove",
             "directory_rename",
             "directory_walk",
+            "edit",
             "file_append",
             "file_create",
             "file_read",
             "file_remove",
             "file_rename",
             "file_write",
+            "glob",
+            "grep",
             "question",
+            "skill",
+            "todowrite",
           ])
         }),
       ),

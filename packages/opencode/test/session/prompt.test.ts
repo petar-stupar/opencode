@@ -518,6 +518,15 @@ it.instance("loop calls LLM and returns assistant message", () =>
     expect(definitions.map((tool) => tool.function.name).sort()).toEqual(
       [
         "question",
+        "edit",
+        "apply_patch",
+        "todowrite",
+        "skill",
+        "task",
+        "lsp",
+        "glob",
+        "grep",
+        "execute",
         "file_read",
         "file_write",
         "file_append",
@@ -1110,20 +1119,6 @@ raceNoLLMServer.instance(
       if (lastUser?.info.role === "user" && lastAssistant?.info.role === "assistant") {
         expect(lastAssistant.info.parentID).toBe(lastUser?.info.id)
       }
-    }),
-  { config: cfg },
-  3_000,
-)
-
-noLLMServer.instance(
-  "rejects subtask execution in the filesystem-only distribution",
-  () =>
-    Effect.gen(function* () {
-      const { prompt, chat } = yield* boot()
-      const msg = yield* user(chat.id, "hello")
-      yield* addSubtask(chat.id, msg.id)
-      const exit = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
-      expect(Exit.isFailure(exit)).toBe(true)
     }),
   { config: cfg },
   3_000,
@@ -1776,4 +1771,235 @@ noLLMServer.instance(
       if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("Shell interpolation is unavailable")
     }),
   { config: { ...cfg, command: { unsafe: { template: "!`must-never-execute`" } } } },
+)
+
+it.instance("failed subtask preserves metadata on error tool state", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: {
+        general: {
+          model: "test/missing-model",
+        },
+      },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.tool("task", {
+      description: "inspect bug",
+      prompt: "look into the cache key path",
+      subagent_type: "general",
+    })
+    yield* llm.text("done")
+    const msg = yield* user(chat.id, "hello")
+    yield* addSubtask(chat.id, msg.id)
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.info.role).toBe("assistant")
+    expect(yield* llm.calls).toBe(2)
+
+    const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+    const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
+    expect(taskMsg?.info.role).toBe("assistant")
+    if (!taskMsg || taskMsg.info.role !== "assistant") return
+
+    const tool = errorTool(taskMsg.parts)
+    if (!tool) return
+
+    expect(tool.state.error).toContain("Tool execution failed")
+    expect(tool.state.metadata).toBeDefined()
+    expect(tool.state.metadata?.sessionId).toBeDefined()
+    expect(tool.state.metadata?.model).toEqual({
+      providerID: ProviderV2.ID.make("test"),
+      modelID: ModelV2.ID.make("missing-model"),
+    })
+  }),
+)
+
+it.instance("subtask child inherits parent session external_directory allow", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Parent",
+      permission: [{ permission: "external_directory", pattern: "/tmp/allowed/*", action: "allow" }],
+    })
+    yield* llm.text("done")
+    const msg = yield* user(chat.id, "hello")
+    yield* addSubtask(chat.id, msg.id)
+
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const kids = yield* sessions.children(chat.id)
+    expect(kids).toHaveLength(1)
+    const child = kids[0]!
+    const rules = child.permission ?? []
+    expect(rules).toEqual(
+      expect.arrayContaining([{ permission: "external_directory", pattern: "/tmp/allowed/*", action: "allow" }]),
+    )
+    expect(Permission.evaluate("external_directory", "/tmp/allowed/file", rules).action).toBe("allow")
+    expect(Permission.evaluate("task", "anything", rules).action).toBe("deny")
+  }),
+)
+
+it.instance(
+  "running subtask preserves metadata after tool-call transition",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      yield* llm.hang
+      const msg = yield* user(chat.id, "hello")
+      yield* addSubtask(chat.id, msg.id)
+
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+
+      const tool = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
+          const tool = taskMsg?.parts.find((part): part is SessionV1.ToolPart => part.type === "tool")
+          if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
+        }),
+        "timed out waiting for running subtask metadata",
+      )
+
+      if (tool.state.status !== "running") return
+      expect(typeof tool.state.metadata?.sessionId).toBe("string")
+      expect(tool.state.title).toBeDefined()
+      expect(tool.state.metadata?.model).toBeDefined()
+
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(fiber)
+    }),
+  5_000,
+)
+
+noLLMServer.instance(
+  "cancel finalizes subtask tool state",
+  () =>
+    Effect.gen(function* () {
+      const ready = yield* Deferred.make<void>()
+      const aborted = yield* Deferred.make<void>()
+      const registry = yield* ToolRegistry.Service
+      const { task } = yield* registry.named()
+      const original = task.execute
+      task.execute = (_args, ctx) =>
+        Effect.callback<never>((_resume) => {
+          ctx.abort.addEventListener("abort", () => succeedVoid(aborted), { once: true })
+          if (ctx.abort.aborted) succeedVoid(aborted)
+          succeedVoid(ready)
+          return Effect.sync(() => succeedVoid(aborted))
+        })
+      yield* Effect.addFinalizer(() => Effect.sync(() => void (task.execute = original)))
+
+      const { prompt, chat } = yield* boot()
+      const msg = yield* user(chat.id, "hello")
+      yield* addSubtask(chat.id, msg.id)
+
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* awaitWithTimeout(Deferred.await(ready), "timed out waiting for task tool to start", "10 seconds")
+      yield* prompt.cancel(chat.id)
+
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      yield* awaitWithTimeout(Deferred.await(aborted), "timed out waiting for task tool abort", "10 seconds")
+
+      const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+      const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
+      expect(taskMsg?.info.role).toBe("assistant")
+      if (!taskMsg || taskMsg.info.role !== "assistant") return
+
+      const tool = toolPart(taskMsg.parts)
+      expect(tool?.type).toBe("tool")
+      if (!tool) return
+
+      expect(tool.state.status).not.toBe("running")
+      expect(taskMsg.info.time.completed).toBeDefined()
+      expect(taskMsg.info.finish).toBeDefined()
+    }),
+  { config: cfg },
+  30_000,
+)
+
+it.instance(
+  "cancel propagates from slash command subtask to child session",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      yield* llm.hang
+      const msg = yield* user(chat.id, "hello")
+      yield* addSubtask(chat.id, msg.id)
+
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+      const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
+      const tool = taskMsg ? toolPart(taskMsg.parts) : undefined
+      const sessionID = tool?.state.status === "running" ? tool.state.metadata?.sessionId : undefined
+      expect(typeof sessionID).toBe("string")
+      if (typeof sessionID !== "string") throw new Error("missing child session id")
+      const childID = SessionID.make(sessionID)
+      expect((yield* status.get(childID)).type).toBe("busy")
+
+      yield* prompt.cancel(chat.id)
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+      expect((yield* status.get(childID)).type).toBe("idle")
+    }),
+  10_000,
+)
+
+function toolPart(parts: SessionV1.Part[]) {
+  return parts.find((part): part is SessionV1.ToolPart => part.type === "tool")
+}
+
+function errorTool(parts: SessionV1.Part[]) {
+  const part = toolPart(parts)
+  expect(part?.state.status).toBe("error")
+  return part?.state.status === "error" ? (part as ErrorToolPart) : undefined
+}
+
+type ErrorToolPart = SessionV1.ToolPart & { state: SessionV1.ToolStateError }
+
+it.instance("code mode delegates through the normal child session and returns its result", () =>
+  Effect.gen(function* () {
+    const config = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Code mode delegation" })
+    yield* config.llm.tool("execute", {
+      code: `return await tools.task({description: "Inspect source", prompt: "Summarize the source", subagent_type: "general"})`,
+    })
+    yield* config.llm.text("child result")
+    yield* config.llm.text("parent result")
+    yield* user(chat.id, "Delegate the source inspection")
+    yield* prompt.loop({ sessionID: chat.id })
+    expect(yield* config.llm.calls).toBe(3)
+    const children = yield* sessions.children(chat.id)
+    expect(children).toHaveLength(1)
+    const messages = yield* MessageV2.filterCompactedEffect(chat.id)
+    const part = messages
+      .flatMap((message) => message.parts)
+      .find((part) => part.type === "tool" && part.tool === "execute")
+    expect(part?.type === "tool" && part.state.status === "completed" && part.state.output).toContain("child result")
+    const hits = yield* config.llm.hits
+    const tools = Schema.decodeUnknownSync(
+      Schema.Array(Schema.Struct({ function: Schema.Struct({ name: Schema.String }) })),
+    )(hits[1].body.tools)
+    expect(tools.map((tool) => tool.function.name)).toContain("file_read")
+    expect(tools.map((tool) => tool.function.name)).not.toContain("bash")
+    expect(tools.map((tool) => tool.function.name)).not.toContain("task")
+  }),
 )

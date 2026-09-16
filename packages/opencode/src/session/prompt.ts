@@ -1,3 +1,4 @@
+import { ulid } from "ulid"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import path from "path"
@@ -33,7 +34,7 @@ import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Cause, Effect, Exit, Layer, Option, Scope, Context, Schema, Types, Stream } from "effect"
 import { InstanceState } from "@/effect/instance-state"
-import { type TaskPromptOps } from "@/tool/task"
+import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -246,6 +247,202 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
       if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
       return yield* provider.defaultModel().pipe(Effect.orDie)
+    })
+
+    const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
+      task: SessionV1.SubtaskPart
+      model: Provider.Model
+      lastUser: SessionV1.User
+      sessionID: SessionID
+      session: Session.Info
+      msgs: SessionV1.WithParts[]
+    }) {
+      const { task, model, lastUser, sessionID, session, msgs } = input
+      const ctx = yield* InstanceState.context
+      const promptOps = yield* ops()
+      const { task: taskTool } = yield* registry.named()
+      const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
+      const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "assistant",
+        parentID: lastUser.id,
+        sessionID,
+        mode: task.agent,
+        agent: task.agent,
+        variant: lastUser.model.variant,
+        path: { cwd: ctx.directory, root: ctx.worktree },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: taskModel.id,
+        providerID: taskModel.providerID,
+        time: { created: Date.now() },
+      })
+      let part: SessionV1.ToolPart = yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: assistantMessage.id,
+        sessionID: assistantMessage.sessionID,
+        type: "tool",
+        callID: ulid(),
+        tool: TaskTool.id,
+        state: {
+          status: "running",
+          input: {
+            prompt: task.prompt,
+            description: task.description,
+            subagent_type: task.agent,
+            command: task.command,
+          },
+          time: { start: Date.now() },
+        },
+      })
+      const taskArgs = {
+        prompt: task.prompt,
+        description: task.description,
+        subagent_type: task.agent,
+        command: task.command,
+      }
+      yield* plugin.trigger(
+        "tool.execute.before",
+        { tool: TaskTool.id, sessionID, callID: part.id },
+        { args: taskArgs },
+      )
+
+      const taskAgent = yield* agents.get(task.agent)
+      if (!taskAgent) {
+        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+        const error = new NamedError.Unknown({ message: `Agent not found: "${task.agent}".${hint}` })
+        yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
+        throw error
+      }
+
+      let error: Error | undefined
+      const taskAbort = new AbortController()
+      const result = yield* taskTool
+        .execute(taskArgs, {
+          agent: task.agent,
+          messageID: assistantMessage.id,
+          sessionID,
+          abort: taskAbort.signal,
+          callID: part.callID,
+          extra: { bypassAgentCheck: true, promptOps },
+          messages: msgs,
+          metadata: (val: { title?: string; metadata?: Record<string, any> }) =>
+            Effect.gen(function* () {
+              part = yield* sessions.updatePart({
+                ...part,
+                type: "tool",
+                state: { ...part.state, ...val },
+              } satisfies SessionV1.ToolPart)
+            }),
+          ask: (req) =>
+            permission
+              .ask({
+                ...req,
+                sessionID,
+                ruleset: Permission.merge(taskAgent.permission, session.permission ?? []),
+              })
+              .pipe(Effect.orDie),
+        })
+        .pipe(
+          Effect.catchCause((cause) => {
+            const defect = Cause.squash(cause)
+            error = defect instanceof Error ? defect : new Error(String(defect))
+            return Effect.logError("subtask execution failed", {
+              error,
+              agent: task.agent,
+              description: task.description,
+            })
+          }),
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              taskAbort.abort()
+              assistantMessage.finish = "tool-calls"
+              assistantMessage.time.completed = Date.now()
+              yield* sessions.updateMessage(assistantMessage)
+              if (part.state.status === "running") {
+                yield* sessions.updatePart({
+                  ...part,
+                  state: {
+                    status: "error",
+                    error: "Cancelled",
+                    time: { start: part.state.time.start, end: Date.now() },
+                    metadata: part.state.metadata,
+                    input: part.state.input,
+                  },
+                } satisfies SessionV1.ToolPart)
+              }
+            }),
+          ),
+        )
+
+      const attachments = result?.attachments?.map((attachment) => ({
+        ...attachment,
+        id: PartID.ascending(),
+        sessionID,
+        messageID: assistantMessage.id,
+      }))
+
+      yield* plugin.trigger(
+        "tool.execute.after",
+        { tool: TaskTool.id, sessionID, callID: part.id, args: taskArgs },
+        result,
+      )
+
+      assistantMessage.finish = "tool-calls"
+      assistantMessage.time.completed = Date.now()
+      yield* sessions.updateMessage(assistantMessage)
+
+      if (result && part.state.status === "running") {
+        yield* sessions.updatePart({
+          ...part,
+          state: {
+            status: "completed",
+            input: part.state.input,
+            title: result.title,
+            metadata: result.metadata,
+            output: result.output,
+            attachments,
+            time: { ...part.state.time, end: Date.now() },
+          },
+        } satisfies SessionV1.ToolPart)
+      }
+
+      if (!result) {
+        yield* sessions.updatePart({
+          ...part,
+          state: {
+            status: "error",
+            error: error ? `Tool execution failed: ${error.message}` : "Tool execution failed",
+            time: {
+              start: part.state.status === "running" ? part.state.time.start : Date.now(),
+              end: Date.now(),
+            },
+            metadata: part.state.status === "pending" ? undefined : part.state.metadata,
+            input: part.state.input,
+          },
+        } satisfies SessionV1.ToolPart)
+      }
+
+      if (!task.command) return
+
+      const summaryUserMsg: SessionV1.User = {
+        id: MessageID.ascending(),
+        sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: lastUser.agent,
+        model: lastUser.model,
+      }
+      yield* sessions.updateMessage(summaryUserMsg)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: summaryUserMsg.id,
+        sessionID,
+        type: "text",
+        text: "Summarize the task tool output above and continue with your task.",
+        synthetic: true,
+      } satisfies SessionV1.TextPart)
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
@@ -592,8 +789,6 @@ const layer = Layer.effect(
         return yield* Effect.die(
           new Error("Structured-output tools are unavailable; request JSON text or write a file"),
         )
-      if (input.parts.some((part) => part.type === "subtask"))
-        return yield* Effect.die(new Error("Subtasks are unavailable in the filesystem-only distribution"))
       if (input.parts.some((part) => part.type === "file" && part.source?.type === "resource"))
         return yield* Effect.die(new Error("MCP resources are unavailable; use a mounted filesystem"))
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
@@ -685,7 +880,8 @@ const layer = Layer.effect(
           const task = tasks.pop()
 
           if (task?.type === "subtask") {
-            yield* Effect.die(new Error("Subtasks are unavailable in the filesystem-only distribution"))
+            yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+            continue
             continue
           }
 
