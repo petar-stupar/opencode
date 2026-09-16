@@ -4,17 +4,21 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Npm } from "@opencode-ai/core/npm"
 import { Cause, Effect, Exit, Fiber } from "effect"
 import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { NpmTest } from "../fake/npm"
 import { waitGlobalBusEvent } from "../server/global-bus"
 
 const it = testEffect(
   LayerNode.compile(LayerNode.group([InstanceStore.node, CrossSpawnSpawner.node]), [
     [InstanceStore.bootstrapNode, InstanceBootstrap.node],
+    // The local plugin has no dependencies; package installation is tested separately.
+    [Npm.node, NpmTest.noop],
   ]),
 )
 
@@ -67,19 +71,15 @@ function waitDisposed(directory: string) {
   })
 }
 
-// Cold bootstrap waits for real Git processes and plugin dependency installation.
-it.live(
-  "InstanceStore.provide runs InstanceBootstrap before effect",
-  () =>
-    Effect.gen(function* () {
-      const tmp = yield* bootstrapFixture
-      const store = yield* InstanceStore.Service
+it.live("InstanceStore.provide runs InstanceBootstrap before effect", () =>
+  Effect.gen(function* () {
+    const tmp = yield* bootstrapFixture
+    const store = yield* InstanceStore.Service
 
-      yield* store.provide({ directory: tmp.directory }, Effect.succeed("ok"))
+    yield* store.provide({ directory: tmp.directory }, Effect.succeed("ok"))
 
-      expect(existsSync(tmp.marker)).toBe(true)
-    }),
-  process.platform === "win32" ? 60_000 : 30_000,
+    expect(existsSync(tmp.marker)).toBe(true)
+  }),
 )
 
 it.live("CLI bootstrap runs InstanceBootstrap before callback", () =>

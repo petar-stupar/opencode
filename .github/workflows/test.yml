@@ -78,6 +78,14 @@ jobs:
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
+      - name: Check Windows bootstrap and skill cache
+        if: runner.os == 'Windows' && github.repository != 'anomalyco/opencode'
+        working-directory: packages/opencode
+        timeout-minutes: 3
+        run: bun test --timeout 30000 test/project/instance-bootstrap.test.ts test/skill/discovery.test.ts
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: true
+
       - name: Run OpenCode unit tests
         if: github.repository != 'anomalyco/opencode'
         working-directory: packages/opencode
