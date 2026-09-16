@@ -159,6 +159,8 @@ jobs:
         run: bun --cwd packages/app test:e2e:local
         env:
           CI: true
+          # Leave room for Vite and syntax-highlighting workers on fork runners.
+          PLAYWRIGHT_WORKERS: ${{ github.repository != 'anomalyco/opencode' && runner.os == 'Windows' && '2' || '5' }}
         timeout-minutes: 30
 
       - name: Upload Playwright artifacts
