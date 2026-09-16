@@ -160,8 +160,9 @@ const table = sqliteTable("session", {
 - Keep EventV2 replay owner claims separate from clustered Session execution ownership.
 - Keep the System Context algebra, registry, and built-ins in `src/system-context`; keep Context Source producers with their observed domains, and keep Session History selection plus Context Epoch persistence Session-owned.
 
-## Filesystem-only distribution
+## Filesystem-oriented distribution
 
-- Preserve the closed question/filesystem tool catalogs in both runtimes. Do not reintroduce executable tools, MCP connections, shell interpolation, synthetic tools, or plugin tool discovery when merging upstream changes.
+- Preserve direct filesystem operations plus the supported coding tools: edit/patch, todo, skill loading, delegation, LSP, custom plugin tools, glob/grep, and confined code mode. MCP connections, built-in shell/web tools, shell interpolation, and synthetic compatibility tools remain disabled.
+- Code mode must expose only the session's enabled tools, excluding itself. Nested calls must retain validation, permissions, hooks, cancellation, and attachment delivery. Custom plugins are trusted host code.
 - Follow [FILESYSTEM.md](FILESYSTEM.md) for filesystem semantics, compatibility boundaries, and upstream integration checks. Symlink traversal is supported and must retain cycle detection and external-target authorization.
 - Keep `.github/workflows/filesystem-tools.yml` and its explicit catalog expectations in sync only when the intended distribution contract changes.

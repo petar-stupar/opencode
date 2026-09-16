@@ -78,7 +78,7 @@ const layer = Layer.effect(
 
         return [
           "Skills provide specialized instructions and workflows for specific tasks.",
-          "Use file_read to read the SKILL.md at its listed path when a task matches its description.",
+          "Use the skill tool to load a matching skill by name, or file_read to read its SKILL.md.",
           // the agents seem to ingest the information about skills a bit better if we present a more verbose
           // version of them here and a less verbose version in tool description, rather than vice versa.
           Skill.fmt(list, { verbose: true }),

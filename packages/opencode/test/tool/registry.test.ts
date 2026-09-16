@@ -18,6 +18,15 @@ import { TestConfig } from "../fixture/config"
 
 const expected = [
   "question",
+  "edit",
+  "apply_patch",
+  "todowrite",
+  "skill",
+  "task",
+  "lsp",
+  "glob",
+  "grep",
+  "execute",
   "file_read",
   "file_write",
   "file_append",
@@ -52,8 +61,8 @@ const it = testEffect(
 
 afterEach(disposeAllInstances)
 
-describe("filesystem-only legacy registry", () => {
-  it.instance("exposes exactly question and filesystem tools regardless of experimental flags or model", () =>
+describe("filesystem-oriented legacy registry", () => {
+  it.instance("exposes the intended tools regardless of experimental flags or model", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const agents = yield* Agent.Service
@@ -72,16 +81,19 @@ describe("filesystem-only legacy registry", () => {
     }),
   )
 
-  it.instance("does not load executable custom tools from configuration directories", () =>
+  it.instance("loads custom tools from configuration directories", () =>
     Effect.gen(function* () {
       const instance = yield* TestInstance
       const directory = path.join(instance.directory, ".opencode", "tools")
       yield* Effect.promise(() => fs.mkdir(directory, { recursive: true }))
       yield* Effect.promise(() =>
-        Bun.write(path.join(directory, "file_read.ts"), 'throw new Error("Custom tools must never be imported")'),
+        Bun.write(
+          path.join(directory, "greet.ts"),
+          'export default {description: "Greeting", args: {}, execute: async () => "hi"}',
+        ),
       )
       const registry = yield* ToolRegistry.Service
-      expect((yield* registry.ids()).sort()).toEqual([...expected].sort())
+      expect((yield* registry.ids()).sort()).toEqual([...expected, "greet"].sort())
     }),
   )
 

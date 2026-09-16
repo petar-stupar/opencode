@@ -153,6 +153,8 @@ describe("Discovery.pull", () => {
 
   it.live("refreshes a remote skill when its version changes", () =>
     Effect.gen(function* () {
+      // Close read handles before replacing the containing directory on Windows.
+      const fsys = yield* FSUtil.Service
       yield* Effect.promise(() => rm(cacheDir, { recursive: true, force: true }))
       mutableVersion = "1"
       mutableContent = "# Old"
@@ -162,21 +164,21 @@ describe("Discovery.pull", () => {
       const url = `http://localhost:${server.port}/mutable/`
 
       const first = yield* discovery.pull(url)
-      expect(yield* Effect.promise(() => Bun.file(path.join(first[0], "SKILL.md")).text())).toBe("# Old")
+      expect(yield* fsys.readFileString(path.join(first[0], "SKILL.md"))).toBe("# Old")
 
       mutableVersion = "2"
       mutableContent = "# Partial"
       mutableFiles = ["SKILL.md", "missing.md"]
       const second = yield* discovery.pull(url)
-      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "SKILL.md")).text())).toBe("# Old")
-      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "old.md")).text())).toBe("old reference")
+      expect(yield* fsys.readFileString(path.join(second[0], "SKILL.md"))).toBe("# Old")
+      expect(yield* fsys.readFileString(path.join(second[0], "old.md"))).toBe("old reference")
 
       mutableVersion = "3"
       mutableContent = "# New"
       mutableFiles = ["SKILL.md"]
       yield* discovery.pull(url)
-      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "SKILL.md")).text())).toBe("# New")
-      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "old.md")).exists())).toBe(false)
+      expect(yield* fsys.readFileString(path.join(second[0], "SKILL.md"))).toBe("# New")
+      expect(yield* fsys.exists(path.join(second[0], "old.md"))).toBe(false)
       expect(mutableDownloadCount).toBe(3)
 
       yield* discovery.pull(url)

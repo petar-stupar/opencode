@@ -87,7 +87,7 @@ describe("session.system", () => {
   test("uses filesystem guidance for every provider", () => {
     for (const id of ["gpt-6", "claude-opus", "gemini-pro", "muse-spark", "k3"]) {
       const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)[0]
-      expect(prompt).toContain("filesystem tools only")
+      expect(prompt).toContain("filesystem tools and coding workflow tools")
       expect(prompt).toContain("file_read")
     }
   })

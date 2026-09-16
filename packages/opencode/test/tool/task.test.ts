@@ -169,7 +169,7 @@ function reply(
 
 describe("tool.task", () => {
   it.instance(
-    "does not advertise tasks even with configured subagents",
+    "description sorts subagents by name and is stable across calls",
     () =>
       Effect.gen(function* () {
         const agent = yield* Agent.Service
@@ -184,7 +184,15 @@ describe("tool.task", () => {
 
         expect(first).toBe(second)
 
-        expect(first).toBe("")
+        const alpha = first.indexOf("- alpha: Alpha agent")
+        const explore = first.indexOf("- explore:")
+        const general = first.indexOf("- general:")
+        const zebra = first.indexOf("- zebra: Zebra agent")
+
+        expect(alpha).toBeGreaterThan(-1)
+        expect(explore).toBeGreaterThan(alpha)
+        expect(general).toBeGreaterThan(explore)
+        expect(zebra).toBeGreaterThan(general)
       }),
     {
       config: {
@@ -203,7 +211,7 @@ describe("tool.task", () => {
   )
 
   it.instance(
-    "does not advertise tasks regardless of task permissions",
+    "description hides denied subagents for the caller",
     () =>
       Effect.gen(function* () {
         const agent = yield* Agent.Service
@@ -212,7 +220,7 @@ describe("tool.task", () => {
         const description =
           (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === TaskTool.id)?.description ?? ""
 
-        expect(description).toBe("")
+        expect(description).toContain("- alpha: Alpha agent")
         expect(description).not.toContain("- zebra: Zebra agent")
       }),
     {

@@ -22,6 +22,12 @@ import { toolIdentity, executeTool, toolDefinitions } from "./lib/tool"
 
 const expected = [
   "question",
+  "edit",
+  "apply_patch",
+  "glob",
+  "grep",
+  "skill",
+  "todowrite",
   "file_read",
   "file_write",
   "file_append",
@@ -91,37 +97,27 @@ const text = (result: Awaited<ReturnType<typeof withTools>>) => {
   return result.value
 }
 
-describe("filesystem-only distribution", () => {
-  test("advertises the exact catalog and cannot execute arbitrary or impersonated tools", async () => {
+describe("filesystem-oriented distribution", () => {
+  test("advertises restored tools and accepts custom registrations while reserving disabled names", async () => {
     await using tmp = await tmpdir()
     await withTools(tmp.path, (registry) =>
       Effect.gen(function* () {
         expect((yield* toolDefinitions(registry)).map((tool) => tool.name).sort()).toEqual([...expected].sort())
         const custom = Tool.make({
-          description: "unavailable",
+          description: "Greeting",
           input: Schema.Unknown,
           output: Schema.String,
-          execute: () => Effect.die("must not run"),
+          execute: () => Effect.succeed("hello"),
         })
         const applications = yield* ApplicationTools.Service
-        yield* applications.register({ bash: custom, file_read: custom })
-        yield* registry.register({ shell: custom, execute: custom, mcp_remote: custom })
-        expect((yield* toolDefinitions(registry)).map((tool) => tool.name).sort()).toEqual([...expected].sort())
-        for (const name of [
-          "bash",
-          "shell",
-          "execute",
-          "mcp_remote",
-          "task",
-          "webfetch",
-          "skill",
-          "todowrite",
-          "apply_patch",
-        ])
+        yield* applications.register({ greet: custom, bash: custom })
+        yield* registry.register({ shell: custom, mcp_remote: custom, webfetch: custom, websearch: custom })
+        expect(text(yield* call(registry, "greet", {}))).toBe("hello")
+        for (const name of ["bash", "shell", "webfetch", "websearch", "mcp_remote"])
           expect(yield* call(registry, name, {})).toEqual({ type: "error", value: `Unknown tool: ${name}` })
         const previous = yield* registry.materialize()
         yield* registry.register({ file_read: custom })
-        expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).not.toContain("file_read")
+        expect(text(yield* call(registry, "file_read", {}))).toBe("hello")
         expect(
           (yield* previous.settle({
             ...identity,
@@ -140,7 +136,7 @@ describe("filesystem-only distribution", () => {
           (yield* toolDefinitions(registry, [{ action: "edit", resource: "*", effect: "deny" }]))
             .map((tool) => tool.name)
             .sort(),
-        ).toEqual(["directory_walk", "file_read", "question"])
+        ).toEqual(["directory_walk", "file_read", "glob", "grep", "question", "skill", "todowrite"])
         expect(
           text(
             yield* call(registry, "question", {

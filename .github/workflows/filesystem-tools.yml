@@ -32,7 +32,7 @@ jobs:
         run: bun test test/tool-filesystem.test.ts test/tool-question.test.ts test/location-mutation.test.ts test/location-layer.test.ts test/skill/guidance.test.ts test/system-context/builtins.test.ts test/session-runner-tool-registry.test.ts test/application-tools.test.ts
       - name: Legacy and protocol contract
         working-directory: packages/opencode
-        run: bun test test/tool/registry.test.ts test/session/tools.test.ts test/session/system.test.ts test/session/prompt.test.ts test/mcp/disabled.test.ts test/cli/mcp-add.test.ts test/server/httpapi-mcp.test.ts test/server/httpapi-experimental.test.ts test/acp/service-session.test.ts test/session/structured-output.test.ts test/session/structured-output-integration.test.ts
+        run: bun test test/tool/registry.test.ts test/tool/code-mode.test.ts test/tool/code-mode-integration.test.ts test/tool/task.test.ts test/tool/skill.test.ts test/session/tools.test.ts test/session/system.test.ts test/session/prompt.test.ts test/mcp/disabled.test.ts test/cli/mcp-add.test.ts test/server/httpapi-mcp.test.ts test/server/httpapi-experimental.test.ts test/acp/service-session.test.ts test/session/structured-output.test.ts test/session/structured-output-integration.test.ts
       - name: HTTP API contracts
         working-directory: packages/opencode
         run: bun run test:httpapi

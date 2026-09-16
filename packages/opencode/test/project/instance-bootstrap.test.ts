@@ -4,12 +4,14 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Global } from "@opencode-ai/core/global"
 import { Cause, Effect, Exit, Fiber } from "effect"
 import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { markPluginDependenciesReady } from "../fixture/plugin"
 import { waitGlobalBusEvent } from "../server/global-bus"
 
 const it = testEffect(
@@ -31,6 +33,8 @@ afterEach(async () => {
 })
 
 const bootstrapFixture = Effect.gen(function* () {
+  // The local plugin has no dependencies, including when loaded through the CLI runtime.
+  yield* Effect.promise(() => markPluginDependenciesReady(Global.Path.config))
   const dir = yield* tmpdirScoped({ git: true })
   const marker = path.join(dir, "config-hook-fired")
   const pluginFile = path.join(dir, "plugin.ts")

@@ -1,6 +1,6 @@
-# Filesystem-only OpenCode
+# Filesystem-oriented OpenCode
 
-This distribution exposes `question` and ten filesystem operations to agents. External services are accessed through mounted filesystems such as terminalfs, dotnetdocfs, and webasmarkdownfs. OpenCode uses ordinary OS filesystem calls; mounting and managing 9p servers belongs to the development environment.
+This distribution exposes `question`, ten direct filesystem operations, and coding workflow tools. Shell and web services are accessed through mounted filesystems such as terminalfs, dotnetdocfs, and webasmarkdownfs. OpenCode uses ordinary OS filesystem calls; mounting and managing 9p servers belongs to the development environment.
 
 | Tool               | Behavior                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -26,11 +26,23 @@ Writes do not read previous contents, preserve or inject BOMs, run formatters, i
 
 ## Removed agent capabilities
 
-The default legacy and Core session compositions do not expose shell/bash, web, search, edit/patch, todo, skill execution, delegation, LSP, code mode, custom plugin tools, MCP tools, or MCP resource tools. Read skill instructions using `file_read` instead. Legacy shell requests, command-template shell interpolation, subtask requests, and tool-based structured-output requests fail explicitly. Request JSON text or write a JSON file instead of using the structured-output tool. There is no provider compatibility placeholder tool.
+The CLI/legacy runtime also exposes `edit`, `apply_patch`, `todowrite`, `skill`, `task`, `lsp`, `glob`, `grep`, custom plugin tools, and `execute`. These tools are available without experimental flags, subject to agent/session permissions. Core restores its existing `edit`, `apply_patch`, `todowrite`, `skill`, `glob`, and `grep` implementations and canonical application/Location tool registrations. Core has not yet ported upstream's task, LSP, legacy plugin discovery, or code-mode leaves; this change does not bridge Core execution through legacy sessions.
 
-MCP configuration remains readable for compatibility, but the MCP service has no transports, subprocesses, connection state, or OAuth startup. Compatibility endpoints return empty/disabled results or reject connection requests. The CLI no longer registers the MCP command, and ACP rejects supplied MCP servers. SDK and protocol types are retained so older clients and historical transcripts remain readable.
+Source edit/patch tools keep their upstream behavior, including legacy formatting and LSP diagnostics. Use direct `file_*` operations for mounted control files. Glob and grep use the ripgrep executable directly. LSP starts language-server processes. The `skill` tool loads instructions and resource listings; it does not execute skill scripts itself. Todo updates persistent session checklists and the TUI sidebar. Delegated agents use the same distribution catalog, with their own inherited permissions.
 
-The repository retains independent upstream tool implementations, protocol helpers, and generic low-level registries for compatibility and to limit merge churn. They are not part of the distribution's agent toolset. Core's default `BuiltInTools` composition installs an identity-based catalog restriction: registering an application or Location tool, even under an allowed name, cannot replace an allowed implementation with executable code. Embedders constructing their own low-level Core composition must include `BuiltInTools.node` to use this distribution policy. Generic provider adapters and custom host application code are not a security boundary.
+`execute` runs a confined script over the same permission-filtered tools advertised to the agent, including custom plugin tools. For example:
+
+```js
+await tools.file_write({ path: "notes.txt", content: "first\n" })
+await tools.file_append({ path: "notes.txt", content: "second\n" })
+return JSON.parse(await tools.file_read({ path: "notes.txt" })).content
+```
+
+Nested tools return output text; parse JSON explicitly for operations such as `file_read` and `directory_walk`. Each call retains normal input validation, permission checks, plugin hooks, and cancellation. Attachments are collected outside the interpreter and returned with the execute result. The interpreter provides no ambient shell, filesystem, network, or module-loading access, and cannot recursively call `execute`.
+
+Custom JavaScript/TypeScript tools and plugin hooks run as trusted host code and can themselves access processes or networks. The restricted built-in catalog is not an OS sandbox. Reserved names `bash`, `shell`, `webfetch`, `websearch`, and the `mcp_` prefix are excluded from both catalogs. MCP discovery, transports, and resource tools remain disabled. Legacy shell requests and command-template shell interpolation still fail explicitly, as do tool-based structured-output requests. Request JSON text or write a JSON file instead.
+
+The repository retains independent upstream implementations and protocol helpers to limit merge churn. Keeping their source does not expose them as agent tools.
 
 ## Build and install for testing
 
@@ -53,9 +65,9 @@ The native CLI is written under `packages/opencode/dist`. Builds do not install 
 
 ## Maintaining the fork
 
-The shared filesystem operations live in `packages/core/src/filesystem-tools.ts`. Core and legacy adapters own their respective permissions and tool representations. Keep them aligned. The closed Core catalog lives in `packages/core/src/tool/builtins.ts`; the legacy catalog lives in `packages/opencode/src/tool/registry.ts`, with an additional name check in `packages/opencode/src/session/tools.ts`.
+The shared filesystem operations live in `packages/core/src/filesystem-tools.ts`. Core and legacy adapters own their respective permissions and tool representations. Keep them aligned. The Core built-in catalog lives in `packages/core/src/tool/builtins.ts`; the legacy catalog lives in `packages/opencode/src/tool/registry.ts`, with an additional name check in `packages/opencode/src/session/tools.ts`.
 
-The `filesystem-tools` CI workflow runs on pushes and pull requests. Its tests pin the exact tool catalogs, exercise filesystem operations and permissions, and test rejection of executable extensions and legacy bypasses. Make that workflow a required branch-protection check before using automatic upstream merges. Local pulls do not run GitHub checks automatically.
+The `filesystem-tools` CI workflow runs on pushes and pull requests. Its tests pin the exact tool catalogs, exercise filesystem operations and permissions, and test custom registrations, confined orchestration, and rejection of disabled integrations and legacy shell bypasses. Make that workflow a required branch-protection check before using automatic upstream merges. Local pulls do not run GitHub checks automatically.
 
 For each upstream update:
 

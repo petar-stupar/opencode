@@ -96,51 +96,65 @@ const domains = [
   },
 ] as const
 
-describe("i18n parity", () => {
-  test("non-English locales have every English key and required plural variants", async () => {
-    for (const domain of domains) {
-      const source = await dictionary(domain.source)
-      for (const locale of domain.locales) {
-        const target = await dictionary(domain.target(locale))
-        const missing = Object.keys(source).filter((key) => !Object.hasOwn(target, key))
-        const extra = Object.keys(target)
-          .filter((key) => !Object.hasOwn(source, key))
-          .sort()
-        const expected = pluralFamilies(source)
-          .flatMap((key) => (pluralCategories.get(locale) ?? []).map((category) => `${key}.${category}`))
-          .sort()
-        expect({ domain: domain.name, locale, missing, extra }).toEqual({
-          domain: domain.name,
-          locale,
-          missing: [],
-          extra: expected,
-        })
-      }
-    }
-  })
+// These checks import every locale across three packages on a cold Windows runner.
+const timeout = process.platform === "win32" ? 30_000 : 5_000
 
-  test("non-English locales preserve English placeholders", async () => {
-    for (const domain of domains) {
-      const source = await dictionary(domain.source)
-      for (const locale of domain.locales) {
-        const target = await dictionary(domain.target(locale))
-        const mismatched = Object.keys(source).filter(
-          (key) => Object.hasOwn(target, key) && placeholders(source[key]).join() !== placeholders(target[key]).join(),
-        )
-        const pluralMismatched = pluralFamilies(source).flatMap((key) =>
-          (pluralCategories.get(locale) ?? [])
-            .map((category) => `${key}.${category}`)
-            .filter((variant) => placeholders(source[`${key}.other`]).join() !== placeholders(target[variant]).join()),
-        )
-        expect({ domain: domain.name, locale, mismatched, pluralMismatched }).toEqual({
-          domain: domain.name,
-          locale,
-          mismatched: [],
-          pluralMismatched: [],
-        })
+describe("i18n parity", () => {
+  test(
+    "non-English locales have every English key and required plural variants",
+    async () => {
+      for (const domain of domains) {
+        const source = await dictionary(domain.source)
+        for (const locale of domain.locales) {
+          const target = await dictionary(domain.target(locale))
+          const missing = Object.keys(source).filter((key) => !Object.hasOwn(target, key))
+          const extra = Object.keys(target)
+            .filter((key) => !Object.hasOwn(source, key))
+            .sort()
+          const expected = pluralFamilies(source)
+            .flatMap((key) => (pluralCategories.get(locale) ?? []).map((category) => `${key}.${category}`))
+            .sort()
+          expect({ domain: domain.name, locale, missing, extra }).toEqual({
+            domain: domain.name,
+            locale,
+            missing: [],
+            extra: expected,
+          })
+        }
       }
-    }
-  })
+    },
+    timeout,
+  )
+
+  test(
+    "non-English locales preserve English placeholders",
+    async () => {
+      for (const domain of domains) {
+        const source = await dictionary(domain.source)
+        for (const locale of domain.locales) {
+          const target = await dictionary(domain.target(locale))
+          const mismatched = Object.keys(source).filter(
+            (key) =>
+              Object.hasOwn(target, key) && placeholders(source[key]).join() !== placeholders(target[key]).join(),
+          )
+          const pluralMismatched = pluralFamilies(source).flatMap((key) =>
+            (pluralCategories.get(locale) ?? [])
+              .map((category) => `${key}.${category}`)
+              .filter(
+                (variant) => placeholders(source[`${key}.other`]).join() !== placeholders(target[variant]).join(),
+              ),
+          )
+          expect({ domain: domain.name, locale, mismatched, pluralMismatched }).toEqual({
+            domain: domain.name,
+            locale,
+            mismatched: [],
+            pluralMismatched: [],
+          })
+        }
+      }
+    },
+    timeout,
+  )
 
   test("non-English locales translate targeted unseen session keys", async () => {
     const source = await dictionary("./en.ts")

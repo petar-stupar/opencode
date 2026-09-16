@@ -54,7 +54,7 @@ const registryLayer = Layer.effect(
     const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
       const registration =
         local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
-      if (!registration || (restrictions.size > 0 && !FilesystemPolicy.allows(input.call.name, registration.tool)))
+      if (!registration || (restrictions.size > 0 && !FilesystemPolicy.allows(input.call.name)))
         return {
           result: {
             type: "error" as const,
@@ -127,7 +127,7 @@ const registryLayer = Layer.effect(
         }
         for (const [name, registration] of registrations)
           if (
-            (restrictions.size > 0 && !FilesystemPolicy.allows(name, registration.tool)) ||
+            (restrictions.size > 0 && !FilesystemPolicy.allows(name)) ||
             whollyDisabled(permission(registration.tool, name), permissions)
           )
             registrations.delete(name)

@@ -1,4 +1,5 @@
-import { FilesystemTools } from "@opencode-ai/core/filesystem-tools"
+import { FilesystemPolicy } from "@opencode-ai/core/tool/filesystem-policy"
+import { ToolInvocation } from "@/tool/invocation"
 import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Provider } from "@/provider/provider"
@@ -30,6 +31,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const run = yield* EffectBridge.make()
   const permission = yield* Permission.Service
   const registry = yield* ToolRegistry.Service
+  const invoke = yield* ToolInvocation.make
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
@@ -64,13 +66,22 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         .pipe(Effect.orDie),
   })
 
+  const user = input.messages.findLast((message) => message.info.role === "user")?.info
+  const disabled =
+    user?.role === "user"
+      ? Object.entries(user.tools ?? {})
+          .filter((entry) => !entry[1])
+          .map((entry) => entry[0])
+      : []
+
   for (const item of yield* registry.tools({
+    disabled,
     modelID: ModelV2.ID.make(input.model.api.id),
     providerID: input.model.providerID,
     agent: input.agent,
     permission: input.session.permission,
   })) {
-    if (!FilesystemTools.names.some((name) => name === item.id)) continue
+    if (!FilesystemPolicy.allows(item.id)) continue
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
     tools[item.id] = tool({
       description: item.description,
@@ -79,7 +90,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
-            const result = yield* item.execute(args, ctx)
+            const result = yield* invoke(item, args, ctx)
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
