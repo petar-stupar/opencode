@@ -1,4 +1,3 @@
-import { NodeFileSystem } from "@effect/platform-node"
 import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
@@ -37,6 +36,7 @@ export namespace FSUtil {
     readonly writeJson: (path: string, data: unknown, mode?: number) => Effect.Effect<void, Error>
     readonly ensureDir: (path: string) => Effect.Effect<void, Error>
     readonly writeWithDirs: (path: string, content: string | Uint8Array, mode?: number) => Effect.Effect<void, Error>
+    readonly removeDirectory: (path: string) => Effect.Effect<void, Error>
     readonly readDirectoryEntries: (path: string) => Effect.Effect<DirEntry[], Error>
     readonly resolve: (path: string) => Effect.Effect<string>
     readonly findUp: (target: string, start: string, stop?: string) => Effect.Effect<string[], Error>
@@ -75,6 +75,12 @@ export namespace FSUtil {
         const info = yield* fs.stat(path).pipe(Effect.catch(() => Effect.void))
         return info?.type === "File"
       })
+
+      const removeDirectory = (path: string) =>
+        Effect.tryPromise({
+          try: () => NFS.rmdir(path),
+          catch: (cause) => new FileSystemError({ method: "removeDirectory", cause }),
+        })
 
       const readDirectoryEntries = Effect.fn("FileSystem.readDirectoryEntries")(function* (dirPath: string) {
         return yield* Effect.tryPromise({
@@ -204,6 +210,7 @@ export namespace FSUtil {
         isDir,
         isFile,
         readDirectoryEntries,
+        removeDirectory,
         resolve,
         readJson,
         writeJson,

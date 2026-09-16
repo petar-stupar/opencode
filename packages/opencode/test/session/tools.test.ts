@@ -70,13 +70,13 @@ const layer = Layer.mergeAll(
   Layer.succeed(
     ToolRegistry.Service,
     ToolRegistry.Service.of({
-      ids: () => Effect.succeed(["timing"]),
+      ids: () => Effect.succeed(["file_read"]),
       all: () => Effect.succeed([]),
       named: () => Effect.die("unused"),
       tools: () =>
         Effect.succeed([
           {
-            id: "timing",
+            id: "file_read",
             description: "updates metadata more than once",
             parameters: Schema.Struct({}),
             jsonSchema: { type: "object", properties: {} },
@@ -84,7 +84,7 @@ const layer = Layer.mergeAll(
               Effect.gen(function* () {
                 yield* ctx.metadata({ metadata: { output: "first" } })
                 yield* ctx.metadata({ metadata: { output: "second" } })
-                return { title: "timing", metadata: {}, output: "done" }
+                return { title: "file_read", metadata: {}, output: "done" }
               }),
           } satisfies Tool.Def,
         ]),
@@ -101,7 +101,7 @@ it.effect("preserves running tool start time across metadata updates", () =>
       sessionID,
       messageID,
       type: "tool",
-      tool: "timing",
+      tool: "file_read",
       callID,
       state: {
         status: "running",
@@ -144,7 +144,7 @@ it.effect("preserves running tool start time across metadata updates", () =>
       messages: [],
       promptOps: {} as never,
     })
-    const execute = tools.timing.execute
+    const execute = tools.file_read.execute
     if (!execute) throw new Error("timing tool is missing execute")
 
     yield* Effect.promise(() =>

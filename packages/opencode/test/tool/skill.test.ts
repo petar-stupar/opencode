@@ -2,13 +2,14 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
-import type { Permission } from "../../src/permission"
-import type { Tool } from "@/tool/tool"
+import { Tool } from "@/tool/tool"
 import { SkillTool } from "../../src/tool/skill"
-import { ToolRegistry } from "@/tool/registry"
+import { Agent } from "@/agent/agent"
+import { Skill } from "@/skill"
+import { Truncate } from "@/tool/truncate"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
@@ -27,7 +28,9 @@ afterEach(async () => {
   await disposeAllInstances()
 })
 
-const it = testEffect(LayerNode.compile(LayerNode.group([ToolRegistry.node, CrossSpawnSpawner.node, Ripgrep.node])))
+const it = testEffect(
+  LayerNode.compile(LayerNode.group([Skill.node, Agent.node, Truncate.node, CrossSpawnSpawner.node, Ripgrep.node])),
+)
 
 describe("tool.skill", () => {
   it.instance("execute returns skill content block with files", () =>
@@ -58,14 +61,8 @@ Use this skill.
         }),
       )
 
-      const registry = yield* ToolRegistry.Service
-      const agent = { name: "build", mode: "primary" as const, permission: [], options: {} }
-      const tool = (yield* registry.tools({
-        providerID: "opencode" as any,
-        modelID: "gpt-5" as any,
-        agent,
-      })).find((tool) => tool.id === SkillTool.id)
-      if (!tool) throw new Error("Skill tool not found")
+      const info = yield* SkillTool
+      const tool = yield* Tool.init(info)
 
       expect(tool.description).not.toContain("tool-skill")
       expect(tool.description).not.toContain("Skill for tool tests.")
@@ -104,14 +101,8 @@ Use this skill.
         }),
       )
 
-      const registry = yield* ToolRegistry.Service
-      const agent = { name: "build", mode: "primary" as const, permission: [], options: {} }
-      const tool = (yield* registry.tools({
-        providerID: "opencode" as any,
-        modelID: "gpt-5" as any,
-        agent,
-      })).find((tool) => tool.id === SkillTool.id)
-      if (!tool) throw new Error("Skill tool not found")
+      const info = yield* SkillTool
+      const tool = yield* Tool.init(info)
 
       const exit = yield* tool
         .execute(

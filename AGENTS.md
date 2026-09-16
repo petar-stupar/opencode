@@ -159,3 +159,9 @@ const table = sqliteTable("session", {
 - Keep delivery vocabulary explicit. Prompts steer by default and promote at the next safe provider-turn boundary while the current drain requires continuation. An explicit `queue` input remains pending until the Session would otherwise become idle; promote one queued input at that boundary, then reevaluate continuation before promoting another. Promoting any new user input resets the selected agent's provider-turn allowance; a batch of steers resets it once.
 - Keep EventV2 replay owner claims separate from clustered Session execution ownership.
 - Keep the System Context algebra, registry, and built-ins in `src/system-context`; keep Context Source producers with their observed domains, and keep Session History selection plus Context Epoch persistence Session-owned.
+
+## Filesystem-only distribution
+
+- Preserve the closed question/filesystem tool catalogs in both runtimes. Do not reintroduce executable tools, MCP connections, shell interpolation, synthetic tools, or plugin tool discovery when merging upstream changes.
+- Follow [FILESYSTEM.md](FILESYSTEM.md) for filesystem semantics, compatibility boundaries, and upstream integration checks. Symlink traversal is supported and must retain cycle detection and external-target authorization.
+- Keep `.github/workflows/filesystem-tools.yml` and its explicit catalog expectations in sync only when the intended distribution contract changes.

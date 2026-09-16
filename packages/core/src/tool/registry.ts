@@ -11,6 +11,7 @@ import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
+import { FilesystemPolicy } from "./filesystem-policy"
 import { makeLocationNode } from "../effect/app-node"
 
 export type ExecuteInput = {
@@ -21,6 +22,8 @@ export type ExecuteInput = {
 }
 
 export interface Interface {
+  /** Install the distribution catalog policy for this Location. */
+  readonly restrict: () => Effect.Effect<void, never, Scope.Scope>
   readonly materialize: (permissions?: PermissionV2.Ruleset) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
@@ -45,12 +48,13 @@ const registryLayer = Layer.effect(
     const applications = yield* ApplicationTools.Service
     const resources = yield* ToolOutputStore.Service
     type Registration = { readonly identity: object; readonly tool: AnyTool }
+    const restrictions = new Set<object>()
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
     const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
       const registration =
         local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
-      if (!registration)
+      if (!registration || (restrictions.size > 0 && !FilesystemPolicy.allows(input.call.name, registration.tool)))
         return {
           result: {
             type: "error" as const,
@@ -82,6 +86,18 @@ const registryLayer = Layer.effect(
     })
 
     return Service.of({
+      restrict: () =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            const token = {}
+            restrictions.add(token)
+            return token
+          }),
+          (token) =>
+            Effect.sync(() => {
+              restrictions.delete(token)
+            }),
+        ).pipe(Effect.asVoid),
       register: Effect.fn("ToolRegistry.register")(function* (tools) {
         const entries = Object.entries(tools)
         if (entries.length === 0) return
@@ -110,7 +126,11 @@ const registryLayer = Layer.effect(
           if (registration) registrations.set(name, registration)
         }
         for (const [name, registration] of registrations)
-          if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+          if (
+            (restrictions.size > 0 && !FilesystemPolicy.allows(name, registration.tool)) ||
+            whollyDisabled(permission(registration.tool, name), permissions)
+          )
+            registrations.delete(name)
         return {
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
           settle: (input) => {

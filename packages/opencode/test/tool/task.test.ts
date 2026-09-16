@@ -3,7 +3,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -169,7 +169,7 @@ function reply(
 
 describe("tool.task", () => {
   it.instance(
-    "description sorts subagents by name and is stable across calls",
+    "does not advertise tasks even with configured subagents",
     () =>
       Effect.gen(function* () {
         const agent = yield* Agent.Service
@@ -184,15 +184,7 @@ describe("tool.task", () => {
 
         expect(first).toBe(second)
 
-        const alpha = first.indexOf("- alpha: Alpha agent")
-        const explore = first.indexOf("- explore:")
-        const general = first.indexOf("- general:")
-        const zebra = first.indexOf("- zebra: Zebra agent")
-
-        expect(alpha).toBeGreaterThan(-1)
-        expect(explore).toBeGreaterThan(alpha)
-        expect(general).toBeGreaterThan(explore)
-        expect(zebra).toBeGreaterThan(general)
+        expect(first).toBe("")
       }),
     {
       config: {
@@ -211,7 +203,7 @@ describe("tool.task", () => {
   )
 
   it.instance(
-    "description hides denied subagents for the caller",
+    "does not advertise tasks regardless of task permissions",
     () =>
       Effect.gen(function* () {
         const agent = yield* Agent.Service
@@ -220,7 +212,7 @@ describe("tool.task", () => {
         const description =
           (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === TaskTool.id)?.description ?? ""
 
-        expect(description).toContain("- alpha: Alpha agent")
+        expect(description).toBe("")
         expect(description).not.toContain("- zebra: Zebra agent")
       }),
     {

@@ -18,6 +18,10 @@ export const ResolveInput = Schema.Struct({
   path: Schema.String,
   /** Selects the external approval boundary; it does not validate the target type. */
   kind: Kind.pipe(Schema.optional),
+  /** Resolve the parent only for unlink/rename, so a symlink itself is the target. */
+  followSymlinks: Schema.Boolean.pipe(Schema.optional),
+  /** Filesystem tools authorize external symlink targets separately. */
+  allowExternalSymlinks: Schema.Boolean.pipe(Schema.optional),
 })
 export type ResolveInput = typeof ResolveInput.Type
 
@@ -76,80 +80,88 @@ interface ResolvedPath {
 
 const slash = (value: string) => value.replaceAll("\\", "/")
 
+export const make = Effect.fn("LocationMutation.make")(function* (fs: FSUtil.Interface, directory: string) {
+  const locationRoot = yield* fs.realPath(directory)
+
+  function notFound<A>(effect: Effect.Effect<A, FSUtil.Error>) {
+    return effect.pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)))
+  }
+
+  const resolvePath = Effect.fnUntraced(function* (absolute: string) {
+    const existing = yield* notFound(fs.realPath(absolute))
+    if (existing !== undefined) {
+      const info = yield* fs.stat(existing)
+      return {
+        canonical: existing,
+        type: info.type,
+        directory: info.type === "Directory" ? existing : path.dirname(existing),
+      } satisfies ResolvedPath
+    }
+
+    let anchor = path.dirname(absolute)
+    while (true) {
+      const canonical = yield* notFound(fs.realPath(anchor))
+      if (canonical !== undefined) {
+        const info = yield* fs.stat(canonical)
+        if (info.type !== "Directory") {
+          return yield* new PathError({ path: absolute, reason: "non_directory_ancestor" })
+        }
+        return {
+          canonical: path.resolve(canonical, path.relative(anchor, absolute)),
+          directory: canonical,
+        } satisfies ResolvedPath
+      }
+      const parent = path.dirname(anchor)
+      if (parent === anchor) return yield* new PathError({ path: absolute, reason: "non_directory_ancestor" })
+      anchor = parent
+    }
+  })
+
+  const resolve = Effect.fn("LocationMutation.resolve")(function* (input: ResolveInput) {
+    const relative = !path.isAbsolute(input.path)
+    const absolute = path.resolve(directory, input.path)
+    const lexicallyInternal = FSUtil.contains(directory, absolute)
+    if (relative && !lexicallyInternal) return yield* new PathError({ path: input.path, reason: "relative_escape" })
+
+    const parent = input.followSymlinks === false ? yield* fs.realPath(path.dirname(absolute)) : undefined
+    const resolved =
+      parent === undefined
+        ? yield* resolvePath(absolute)
+        : { canonical: path.join(parent, path.basename(absolute)), directory: parent, type: undefined }
+    if (lexicallyInternal && !FSUtil.contains(locationRoot, resolved.canonical) && !input.allowExternalSymlinks) {
+      return yield* new PathError({ path: input.path, reason: "location_escape" })
+    }
+
+    const external = !lexicallyInternal || !FSUtil.contains(locationRoot, resolved.canonical)
+    const resource = external
+      ? slash(resolved.canonical)
+      : slash(path.relative(locationRoot, resolved.canonical) || ".")
+    const externalDirectory =
+      input.kind === "directory" && resolved.type === "Directory" ? resolved.canonical : resolved.directory
+    const externalResource = slash(path.join(externalDirectory, "*"))
+    return {
+      canonical: resolved.canonical,
+      resource,
+      externalDirectory: external
+        ? {
+            action: "external_directory",
+            directory: externalDirectory,
+            resource: externalResource,
+            save: externalResource,
+          }
+        : undefined,
+    } satisfies Target
+  })
+
+  return Service.of({ resolve })
+})
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
-    const locationRoot = yield* fs.realPath(location.directory)
-
-    function notFound<A>(effect: Effect.Effect<A, FSUtil.Error>) {
-      return effect.pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)))
-    }
-
-    const resolvePath = Effect.fnUntraced(function* (absolute: string) {
-      const existing = yield* notFound(fs.realPath(absolute))
-      if (existing !== undefined) {
-        const info = yield* fs.stat(existing)
-        return {
-          canonical: existing,
-          type: info.type,
-          directory: info.type === "Directory" ? existing : path.dirname(existing),
-        } satisfies ResolvedPath
-      }
-
-      let anchor = path.dirname(absolute)
-      while (true) {
-        const canonical = yield* notFound(fs.realPath(anchor))
-        if (canonical !== undefined) {
-          const info = yield* fs.stat(canonical)
-          if (info.type !== "Directory") {
-            return yield* new PathError({ path: absolute, reason: "non_directory_ancestor" })
-          }
-          return {
-            canonical: path.resolve(canonical, path.relative(anchor, absolute)),
-            directory: canonical,
-          } satisfies ResolvedPath
-        }
-        const parent = path.dirname(anchor)
-        if (parent === anchor) return yield* new PathError({ path: absolute, reason: "non_directory_ancestor" })
-        anchor = parent
-      }
-    })
-
-    const resolve = Effect.fn("LocationMutation.resolve")(function* (input: ResolveInput) {
-      const relative = !path.isAbsolute(input.path)
-      const absolute = path.resolve(location.directory, input.path)
-      const lexicallyInternal = FSUtil.contains(location.directory, absolute)
-      if (relative && !lexicallyInternal) return yield* new PathError({ path: input.path, reason: "relative_escape" })
-
-      const resolved = yield* resolvePath(absolute)
-      if (lexicallyInternal && !FSUtil.contains(locationRoot, resolved.canonical)) {
-        return yield* new PathError({ path: input.path, reason: "location_escape" })
-      }
-
-      const external = !lexicallyInternal
-      const resource = external
-        ? slash(resolved.canonical)
-        : slash(path.relative(locationRoot, resolved.canonical) || ".")
-      const externalDirectory =
-        input.kind === "directory" && resolved.type === "Directory" ? resolved.canonical : resolved.directory
-      const externalResource = slash(path.join(externalDirectory, "*"))
-      return {
-        canonical: resolved.canonical,
-        resource,
-        externalDirectory: external
-          ? {
-              action: "external_directory",
-              directory: externalDirectory,
-              resource: externalResource,
-              save: externalResource,
-            }
-          : undefined,
-      } satisfies Target
-    })
-
-    return Service.of({ resolve })
+    return yield* make(fs, location.directory)
   }),
 )
 

@@ -13,7 +13,7 @@ import type {
 import type { AssistantMessage, Event, OpencodeClient } from "@opencode-ai/sdk/v2"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import * as ACPService from "@/acp/service"
 import * as ACPError from "@/acp/error"
 import { UsageService } from "@/acp/usage"
@@ -352,10 +352,7 @@ describe("ACP service sessions", () => {
     const result = await Effect.runPromise(
       service.newSession({
         cwd: "/workspace",
-        mcpServers: [
-          { name: "tools", command: "node", args: ["server.js"], env: [] },
-          { name: "tools", command: "node", args: ["server.js"], env: [] },
-        ],
+        mcpServers: [],
       }),
     )
 
@@ -368,7 +365,7 @@ describe("ACP service sessions", () => {
     expect(updates).toHaveLength(1)
     expect(JSON.stringify(updates[0])).toContain("available_commands_update")
     expect(JSON.stringify(updates[0])).toContain("review-skill")
-    expect(mcpAdds).toEqual(["tools"])
+    expect(mcpAdds).toEqual([])
   })
 
   it("loads a session and restores model variant and mode from messages", async () => {
@@ -886,7 +883,7 @@ describe("ACP service sessions", () => {
     expect(providersCalls).toBe(2)
   })
 
-  it("registers same-name MCP servers again for different sessions or configs", async () => {
+  it("rejects MCP servers without registering or creating sessions", async () => {
     const adds: unknown[] = []
     let nextSession = 0
     const sdk = {
@@ -917,22 +914,16 @@ describe("ACP service sessions", () => {
     } as unknown as OpencodeClient
     const service = ACPService.make({ sdk })
 
-    await Effect.runPromise(
-      service.newSession({
-        cwd: "/workspace",
-        mcpServers: [{ name: "tools", command: "node", args: ["one.js"], env: [] }],
-      }),
-    )
-    await Effect.runPromise(
-      service.newSession({
-        cwd: "/workspace",
-        mcpServers: [{ name: "tools", command: "node", args: ["two.js"], env: [] }],
-      }),
-    )
-
-    expect(adds).toHaveLength(2)
-    expect(JSON.stringify(adds[0])).toContain("one.js")
-    expect(JSON.stringify(adds[1])).toContain("two.js")
+    for (const command of ["one.js", "two.js"]) {
+      const result = await Effect.runPromise(
+        service
+          .newSession({ cwd: "/workspace", mcpServers: [{ name: "tools", command: "node", args: [command], env: [] }] })
+          .pipe(Effect.exit),
+      )
+      expect(Exit.isFailure(result)).toBe(true)
+    }
+    expect(adds).toHaveLength(0)
+    expect(nextSession).toBe(0)
   })
 
   it("uses the configured model as the new session default", async () => {

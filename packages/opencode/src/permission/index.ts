@@ -202,8 +202,26 @@ export function merge(...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule[] 
 }
 
 export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<string> {
-  const edits = ["edit", "write", "apply_patch"]
-  const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
+  const edits = [
+    "edit",
+    "write",
+    "apply_patch",
+    "file_write",
+    "file_append",
+    "file_create",
+    "file_remove",
+    "file_rename",
+    "directory_create",
+    "directory_rename",
+    "directory_remove",
+  ]
+  const reads = [
+    "file_read",
+    "directory_walk",
+    "list_mcp_resources",
+    "list_mcp_resource_templates",
+    "read_mcp_resource",
+  ]
   return new Set(
     tools.filter((tool) => {
       const permission = edits.includes(tool) ? "edit" : reads.includes(tool) ? "read" : tool

@@ -7,6 +7,7 @@ import { SystemContext } from "./index"
 import { InstructionContext } from "../instruction-context"
 import { SystemContextRegistry } from "./registry"
 import { FSUtil } from "../fs-util"
+import { FilesystemTools } from "../filesystem-tools"
 import { Global } from "../global"
 
 const builtIns = Layer.effectDiscard(
@@ -14,6 +15,7 @@ const builtIns = Layer.effectDiscard(
     const location = yield* Location.Service
     const registry = yield* SystemContextRegistry.Service
     const environment = [
+      FilesystemTools.prompt,
       "<env>",
       `  Working directory: ${location.directory}`,
       `  Workspace root folder: ${location.project.directory}`,

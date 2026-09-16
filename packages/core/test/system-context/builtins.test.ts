@@ -1,3 +1,4 @@
+import { FilesystemTools } from "@opencode-ai/core/filesystem-tools"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import * as TestClock from "effect/testing/TestClock"
@@ -64,6 +65,7 @@ describe("SystemContextBuiltIns", () => {
       expect(initialized.baseline).toBe(
         [
           "Here is some useful information about the environment you are running in:",
+          FilesystemTools.prompt,
           "<env>",
           `  Working directory: ${directory}`,
           `  Workspace root folder: ${projectDirectory}`,
@@ -112,6 +114,7 @@ describe("SystemContextBuiltIns", () => {
       expect((yield* SystemContext.initialize(yield* context.load())).baseline).toBe(
         [
           "Here is some useful information about the environment you are running in:",
+          FilesystemTools.prompt,
           "<env>",
           `  Working directory: ${directory}`,
           `  Workspace root folder: ${projectDirectory}`,

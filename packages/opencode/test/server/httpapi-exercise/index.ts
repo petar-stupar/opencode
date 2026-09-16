@@ -400,7 +400,7 @@ const scenarios: Scenario[] = [
   http.protected
     .post("/mcp/{name}/auth", "mcp.auth.start")
     .at((ctx) => ({ path: route("/mcp/{name}/auth", { name: "httpapi-missing" }), headers: ctx.headers() }))
-    .json(404, object, "status"),
+    .status(400),
   http.protected
     .delete("/mcp/{name}/auth", "mcp.auth.remove")
     .mutating()
@@ -412,7 +412,7 @@ const scenarios: Scenario[] = [
       path: route("/mcp/{name}/auth/authenticate", { name: "httpapi-missing" }),
       headers: ctx.headers(),
     }))
-    .json(404, object, "status"),
+    .status(400),
   http.protected
     .post("/mcp/{name}/auth/callback", "mcp.auth.callback")
     .at((ctx) => ({
@@ -420,7 +420,14 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
       body: { code: "code" },
     }))
-    .json(404, object, "status"),
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(body.status === "disabled", "MCP OAuth callbacks must remain disabled")
+      },
+      "status",
+    ),
   http.protected
     .post("/mcp/{name}/connect", "mcp.connect")
     .mutating()
@@ -430,7 +437,7 @@ const scenarios: Scenario[] = [
     .post("/mcp/{name}/disconnect", "mcp.disconnect")
     .mutating()
     .at((ctx) => ({ path: route("/mcp/{name}/disconnect", { name: "httpapi-missing" }), headers: ctx.headers() }))
-    .json(404, object, "status"),
+    .status(200),
   http.protected.get("/pty/shells", "pty.shells").json(200, array),
   http.protected.get("/pty", "pty.list").json(200, array),
   http.protected
@@ -1535,18 +1542,7 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
       body: { agent: "build", model: { providerID: "test", modelID: "test-model" }, command: "printf shell-ok" },
     }))
-    .json(
-      200,
-      (body) => {
-        object(body)
-        check(isRecord(body.info) && body.info.role === "assistant", "shell should return assistant message")
-        check(
-          Array.isArray(body.parts) && body.parts.some((part) => isRecord(part) && part.type === "tool"),
-          "shell should return a tool part",
-        )
-      },
-      "status",
-    ),
+    .status(500),
   http.protected
     .post("/session/{sessionID}/summarize", "session.summarize")
     .preserveDatabase()

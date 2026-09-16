@@ -14,7 +14,6 @@ import {
   type ListSessionsResponse,
   type LoadSessionRequest,
   type LoadSessionResponse,
-  type McpServer,
   type NewSessionRequest,
   type NewSessionResponse,
   type PromptRequest,
@@ -82,7 +81,6 @@ export function make(input: {
 }): Interface {
   const session = input.session ?? makeSessionService()
   const directoryService = input.directory ?? makeDirectoryService(input.sdk)
-  const registeredMcp = new Map<string, Set<string>>()
   const sessionSnapshots = new Map<string, Directory.Snapshot>()
   const events = input.connection
     ? ACPEvent.start({ sdk: input.sdk, connection: input.connection, session })
@@ -114,8 +112,8 @@ export function make(input: {
       agentCapabilities: {
         loadSession: true,
         mcpCapabilities: {
-          http: true,
-          sse: true,
+          http: false,
+          sse: false,
         },
         promptCapabilities: {
           embeddedContext: true,
@@ -161,6 +159,7 @@ export function make(input: {
   })
 
   const newSession = Effect.fn("ACP.newSession")(function* (params: NewSessionRequest) {
+    if (params.mcpServers?.length) return yield* new ACPError.UnsupportedOperationError({ method: "mcp" })
     const started = performance.now()
     const snapshot = yield* directorySnapshot(params.cwd)
     const selected = selectDefaultModel(snapshot)
@@ -193,7 +192,6 @@ export function make(input: {
     })
     sessionSnapshots.set(state.id, snapshot)
 
-    yield* registerMcpServers(input.sdk, registeredMcp, params.cwd, state.id, params.mcpServers)
     yield* sendAvailableCommands(input.connection, state.id, snapshot)
 
     const response = {
@@ -209,6 +207,7 @@ export function make(input: {
   })
 
   const loadSession = Effect.fn("ACP.loadSession")(function* (params: LoadSessionRequest) {
+    if (params.mcpServers?.length) return yield* new ACPError.UnsupportedOperationError({ method: "mcp" })
     const snapshot = yield* directorySnapshot(params.cwd)
     const backing = yield* request(
       () => input.sdk.session.get({ directory: params.cwd, sessionID: params.sessionId }, { throwOnError: true }),
@@ -233,7 +232,6 @@ export function make(input: {
     })
     sessionSnapshots.set(state.id, snapshot)
 
-    yield* registerMcpServers(input.sdk, registeredMcp, params.cwd, state.id, params.mcpServers)
     yield* sendAvailableCommands(input.connection, state.id, snapshot)
     yield* replayMessages(events, messages)
 
@@ -293,6 +291,7 @@ export function make(input: {
   })
 
   const resumeSession = Effect.fn("ACP.resumeSession")(function* (params: ResumeSessionRequest) {
+    if (params.mcpServers?.length) return yield* new ACPError.UnsupportedOperationError({ method: "mcp" })
     const snapshot = yield* directorySnapshot(params.cwd)
     const backing = yield* request(
       () => input.sdk.session.get({ directory: params.cwd, sessionID: params.sessionId }, { throwOnError: true }),
@@ -321,7 +320,6 @@ export function make(input: {
     })
     sessionSnapshots.set(state.id, snapshot)
 
-    yield* registerMcpServers(input.sdk, registeredMcp, params.cwd, state.id, params.mcpServers ?? [])
     yield* sendAvailableCommands(input.connection, state.id, snapshot)
 
     return {
@@ -346,7 +344,6 @@ export function make(input: {
 
   const closeSession = Effect.fn("ACP.closeSession")(function* (params: CloseSessionRequest) {
     const removed = yield* session.remove(params.sessionId)
-    registeredMcp.delete(params.sessionId)
     sessionSnapshots.delete(params.sessionId)
     if (!removed) return {}
 
@@ -360,6 +357,7 @@ export function make(input: {
   })
 
   const forkSession = Effect.fn("ACP.forkSession")(function* (params: ForkSessionRequest) {
+    if (params.mcpServers?.length) return yield* new ACPError.UnsupportedOperationError({ method: "mcp" })
     const snapshot = yield* directorySnapshot(params.cwd)
     const forked = yield* request(
       () =>
@@ -392,7 +390,6 @@ export function make(input: {
     })
     sessionSnapshots.set(state.id, snapshot)
 
-    yield* registerMcpServers(input.sdk, registeredMcp, params.cwd, state.id, params.mcpServers ?? [])
     yield* sendAvailableCommands(input.connection, state.id, snapshot)
     yield* replayMessages(events, messages)
 
@@ -1005,85 +1002,6 @@ function sendAvailableCommands(
       })
     }, 0)
   })
-}
-
-function registerMcpServers(
-  sdk: OpencodeClient,
-  registered: Map<string, Set<string>>,
-  directory: string,
-  sessionId: string,
-  servers: readonly McpServer[],
-) {
-  const started = performance.now()
-  const current = registered.get(sessionId) ?? new Set<string>()
-  registered.set(sessionId, current)
-  const pending = new Set<string>()
-
-  return Effect.all(
-    servers
-      .map((server) => ({ server, config: mcpConfig(server) }))
-      .filter((entry) => {
-        const key = mcpRegistrationKey(entry.server.name, entry.config)
-        if (current.has(key) || pending.has(key)) return false
-        pending.add(key)
-        return true
-      })
-      .map((entry) =>
-        request(
-          () =>
-            sdk.mcp.add(
-              {
-                directory,
-                name: entry.server.name,
-                config: entry.config,
-              },
-              { throwOnError: true },
-            ),
-          "mcp",
-        ).pipe(
-          Effect.tap(() => Effect.sync(() => current.add(mcpRegistrationKey(entry.server.name, entry.config)))),
-          Effect.ignore,
-        ),
-      ),
-    { concurrency: "unbounded" },
-  ).pipe(
-    Effect.tap(() =>
-      Effect.sync(() =>
-        ACPProfile.duration("acp.mcp.register", started, {
-          count: pending.size,
-        }),
-      ),
-    ),
-    Effect.asVoid,
-  )
-}
-
-function mcpRegistrationKey(name: string, config: ReturnType<typeof mcpConfig>) {
-  return `${name}:${stableStringify(config)}`
-}
-
-function mcpConfig(server: McpServer) {
-  if ("type" in server) {
-    return {
-      type: "remote" as const,
-      url: server.url,
-      headers: Object.fromEntries(server.headers.map((header) => [header.name, header.value])),
-    }
-  }
-  return {
-    type: "local" as const,
-    command: [server.command, ...server.args],
-    environment: Object.fromEntries(server.env.map((entry) => [entry.name, entry.value])),
-  }
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
-  if (!value || typeof value !== "object") return JSON.stringify(value)
-  return `{${Object.entries(value)
-    .toSorted(([a], [b]) => a.localeCompare(b))
-    .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
-    .join(",")}}`
 }
 
 function restoreSession(

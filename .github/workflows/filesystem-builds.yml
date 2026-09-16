@@ -1,0 +1,70 @@
+name: filesystem-builds
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    name: CLI (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+          - name: macos-arm64
+            os: macos-latest
+          - name: windows-x64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
+      - name: Build CLI and embedded web UI
+        working-directory: packages/opencode
+        run: bun run build --single --skip-install
+        env:
+          OPENCODE_CHANNEL: filesystem
+          OPENCODE_VERSION: 0.0.0-filesystem-${{ github.sha }}
+      - name: Archive executable with permissions
+        run: tar -czf "$RUNNER_TEMP/opencode-${{ matrix.name }}.tar.gz" -C packages/opencode/dist .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: opencode-${{ matrix.name }}
+          path: ${{ runner.temp }}/opencode-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
+      - name: Install extension dependencies
+        working-directory: sdks/vscode
+        run: bun install --frozen-lockfile
+      - name: Package extension
+        working-directory: sdks/vscode
+        run: bun run vsce package --no-dependencies --out opencode-filesystem.vsix
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: opencode-vscode
+          path: sdks/vscode/opencode-filesystem.vsix
+          if-no-files-found: error
+          retention-days: 14

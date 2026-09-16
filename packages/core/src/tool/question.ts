@@ -7,6 +7,7 @@ import { PermissionV2 } from "../permission"
 import { QuestionV2 } from "../question"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
+import { FilesystemPolicy } from "./filesystem-policy"
 import { Tools } from "./tools"
 
 export const name = "question"
@@ -52,36 +53,39 @@ const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
-          description,
-          input: Input,
-          output: Output,
-          toModelOutput: ({ input, output }) => [
-            { type: "text", text: toModelOutput(input.questions, output.answers) },
-          ],
-          execute: (input, context) =>
-            permission
-              .assert({
-                action: "question",
-                resources: ["*"],
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-              })
-              .pipe(
-                Effect.mapError(() => new ToolFailure({ message: "Permission denied: question" })),
-                Effect.andThen(
-                  question
-                    .ask({
-                      sessionID: context.sessionID,
-                      questions: input.questions,
-                      tool: { messageID: context.assistantMessageID, callID: context.toolCallID },
-                    })
-                    .pipe(Effect.orDie),
+        [name]: FilesystemPolicy.builtin(
+          name,
+          Tool.make({
+            description,
+            input: Input,
+            output: Output,
+            toModelOutput: ({ input, output }) => [
+              { type: "text", text: toModelOutput(input.questions, output.answers) },
+            ],
+            execute: (input, context) =>
+              permission
+                .assert({
+                  action: "question",
+                  resources: ["*"],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                })
+                .pipe(
+                  Effect.mapError(() => new ToolFailure({ message: "Permission denied: question" })),
+                  Effect.andThen(
+                    question
+                      .ask({
+                        sessionID: context.sessionID,
+                        questions: input.questions,
+                        tool: { messageID: context.assistantMessageID, callID: context.toolCallID },
+                      })
+                      .pipe(Effect.orDie),
+                  ),
+                  Effect.map((answers) => ({ answers })),
                 ),
-                Effect.map((answers) => ({ answers })),
-              ),
-        }),
+          }),
+        ),
       })
       .pipe(Effect.orDie)
   }),

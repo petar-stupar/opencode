@@ -10,13 +10,14 @@ import { SystemContext } from "../system-context/index"
 const Summary = Schema.Struct({
   name: Schema.String,
   description: Schema.String,
+  location: Schema.String,
 })
 type Summary = typeof Summary.Type
 
 const render = (skills: ReadonlyArray<Summary>) =>
   [
     "Skills provide specialized instructions and workflows for specific tasks.",
-    "Use the skill tool to load a skill when a task matches its description.",
+    "Use file_read to read the listed SKILL.md when a task matches its description.",
     ...(skills.length === 0
       ? ["No skills are currently available."]
       : [
@@ -25,6 +26,7 @@ const render = (skills: ReadonlyArray<Summary>) =>
             "  <skill>",
             `    <name>${skill.name}</name>`,
             `    <description>${skill.description}</description>`,
+            `    <location>${skill.location}</location>`,
             "  </skill>",
           ]),
           "</available_skills>",
@@ -51,7 +53,9 @@ const layer = Layer.effect(
           return SystemContext.empty
         const available = permitted
           .flatMap((skill) =>
-            skill.description === undefined ? [] : [{ name: skill.name, description: skill.description }],
+            skill.description === undefined
+              ? []
+              : [{ name: skill.name, description: skill.description, location: skill.location }],
           )
           .toSorted((a, b) => a.name.localeCompare(b.name))
         return SystemContext.make({
