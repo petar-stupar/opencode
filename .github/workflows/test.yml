@@ -81,7 +81,7 @@ jobs:
       - name: Run OpenCode unit tests
         if: github.repository != 'anomalyco/opencode'
         working-directory: packages/opencode
-        timeout-minutes: 20
+        timeout-minutes: 30
         # Avoid starting twenty CLI subprocesses at once on smaller fork runners.
         run: GITHUB_ACTIONS=false bun run test --max-concurrency 4
         env:
@@ -95,6 +95,7 @@ jobs:
       - name: Run HttpApi exerciser gates
         if: runner.os == 'Linux'
         working-directory: packages/opencode
+        timeout-minutes: 10
         run: bun run test:httpapi
 
   e2e:

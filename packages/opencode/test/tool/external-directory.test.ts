@@ -116,8 +116,9 @@ describe("tool.assertExternalDirectory", () => {
           yield* Effect.promise(() => Bun.write(path.join(outerTmp, "outside.txt"), "x"))
 
           const target = path.join(outerTmp, "outside.txt")
+          // The temp directory and checkout can be on different drives.
           const alt = target
-            .replace(/^[A-Za-z]:/, "")
+            .replace(/^([A-Za-z]):/, "/$1")
             .replaceAll("\\", "/")
             .toLowerCase()
 
