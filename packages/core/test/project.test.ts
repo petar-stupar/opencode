@@ -195,7 +195,8 @@ describe("ProjectV2.resolve", () => {
     }),
   )
 
-  it.live("linked worktree returns opened worktree directory and previous from common dir", () =>
+  it.live(
+    "linked worktree returns opened worktree directory and previous from common dir",
     Effect.gen(function* () {
       const tmp = yield* Effect.acquireRelease(
         Effect.promise(() => tmpdir()),
@@ -217,5 +218,7 @@ describe("ProjectV2.resolve", () => {
       expect(result.id).toBe(remoteID("github.com/owner/repo"))
       expect(result.vcs?.type).toBe("git")
     }),
+    // Includes Git repository setup and worktree creation on Windows runners.
+    process.platform === "win32" ? 30_000 : 5_000,
   )
 })
