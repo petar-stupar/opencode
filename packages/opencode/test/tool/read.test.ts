@@ -192,8 +192,9 @@ describe("tool.read external_directory permission", () => {
 
         const { items, next } = asks()
         const target = path.join(dir, "test.txt")
+        // The temp directory and checkout can be on different drives.
         const alt = target
-          .replace(/^[A-Za-z]:/, "")
+          .replace(/^([A-Za-z]):/, "/$1")
           .replaceAll("\\", "/")
           .toLowerCase()
 

@@ -54,6 +54,10 @@ jobs:
           git config --global user.email "bot@opencode.ai"
           git config --global user.name "opencode"
 
+      - name: Prepare Windows test dependencies
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-ripgrep
+
       - name: Cache Turbo
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -69,7 +73,7 @@ jobs:
           if [ "$GITHUB_REPOSITORY" = "anomalyco/opencode" ]; then
             GITHUB_ACTIONS=false bun turbo test
           else
-            GITHUB_ACTIONS=false bun turbo test --filter='!opencode'
+            GITHUB_ACTIONS=false bun turbo test --filter='!opencode' --concurrency=1
           fi
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
@@ -77,7 +81,7 @@ jobs:
       - name: Run OpenCode unit tests
         if: github.repository != 'anomalyco/opencode'
         working-directory: packages/opencode
-        timeout-minutes: 20
+        timeout-minutes: 30
         # Avoid starting twenty CLI subprocesses at once on smaller fork runners.
         run: GITHUB_ACTIONS=false bun run test --max-concurrency 4
         env:
@@ -91,6 +95,7 @@ jobs:
       - name: Run HttpApi exerciser gates
         if: runner.os == 'Linux'
         working-directory: packages/opencode
+        timeout-minutes: 10
         run: bun run test:httpapi
 
   e2e:
@@ -124,6 +129,10 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      - name: Prepare Windows test dependencies
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-ripgrep
+
       - name: Read Playwright version
         id: playwright-version
         run: |
@@ -151,6 +160,8 @@ jobs:
         run: bun --cwd packages/app test:e2e:local
         env:
           CI: true
+          # Leave room for Vite and syntax-highlighting workers on fork runners.
+          PLAYWRIGHT_WORKERS: ${{ github.repository != 'anomalyco/opencode' && '2' || '5' }}
         timeout-minutes: 30
 
       - name: Upload Playwright artifacts

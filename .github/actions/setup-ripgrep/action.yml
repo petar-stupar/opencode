@@ -1,0 +1,12 @@
+name: Setup ripgrep
+description: Provision the pinned Windows test dependency before timed tests start
+runs:
+  using: composite
+  steps:
+    - name: Install ripgrep
+      shell: pwsh
+      run: |
+        Invoke-WebRequest -Uri 'https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip' -OutFile "$env:RUNNER_TEMP/ripgrep.zip"
+        Expand-Archive -LiteralPath "$env:RUNNER_TEMP/ripgrep.zip" -DestinationPath "$env:RUNNER_TEMP/ripgrep" -Force
+        "$env:RUNNER_TEMP/ripgrep/ripgrep-15.1.0-x86_64-pc-windows-msvc" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        & "$env:RUNNER_TEMP/ripgrep/ripgrep-15.1.0-x86_64-pc-windows-msvc/rg.exe" --version
