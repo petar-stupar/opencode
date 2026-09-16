@@ -65,7 +65,21 @@ jobs:
 
       - name: Run unit tests
         timeout-minutes: 20
-        run: GITHUB_ACTIONS=false bun turbo test
+        run: |
+          if [ "$GITHUB_REPOSITORY" = "anomalyco/opencode" ]; then
+            GITHUB_ACTIONS=false bun turbo test
+          else
+            GITHUB_ACTIONS=false bun turbo test --filter='!opencode'
+          fi
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+
+      - name: Run OpenCode unit tests
+        if: github.repository != 'anomalyco/opencode'
+        working-directory: packages/opencode
+        timeout-minutes: 20
+        # Avoid starting twenty CLI subprocesses at once on smaller fork runners.
+        run: GITHUB_ACTIONS=false bun run test --max-concurrency 4
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
