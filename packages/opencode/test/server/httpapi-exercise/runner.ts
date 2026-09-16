@@ -1,7 +1,9 @@
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Cause, Duration, Effect, Layer, Scope } from "effect"
+import { Cause, Duration, Effect, Layer, Queue, Scope } from "effect"
+import { WorktreeEvent } from "@opencode-ai/schema/worktree-event"
+import { GlobalBus, type GlobalEvent } from "../../../src/bus/global"
 import { TestLLMServer } from "../../lib/llm-server"
 import type { Config } from "../../../src/config/config"
 
@@ -177,7 +179,14 @@ function withContext<A, E>(
           messages: (sessionID) =>
             run(modules.Session.Service.use((svc) => svc.messages({ sessionID }).pipe(Effect.orDie))),
           todos: (sessionID, todos) => run(modules.Todo.Service.use((svc) => svc.update({ sessionID, todos }))),
-          worktree: (input) => run(modules.Worktree.Service.use((svc) => svc.create(input).pipe(Effect.orDie))),
+          worktree: (input) =>
+            Effect.gen(function* () {
+              const ready = yield* worktreeReady()
+              const info = yield* run(modules.Worktree.Service.use((svc) => svc.create(input).pipe(Effect.orDie)))
+              yield* ready(info.directory)
+              return info
+            }).pipe(Effect.scoped),
+          worktreeReady: () => worktreeReady().pipe(Effect.provideService(Scope.Scope, scope)),
           worktreeRemove: (directory) =>
             run(modules.Worktree.Service.use((svc) => svc.remove({ directory })).pipe(Effect.ignore)),
           llmText: (value) => Effect.suspend(() => llm().text(value)),
@@ -195,6 +204,31 @@ function withContext<A, E>(
     ),
     Effect.ensuring(scenario.reset ? resetState : Effect.void),
   )
+}
+
+// Creation returns before bootstrap finishes; removing the worktree immediately
+// can race instance loading and leave scope cleanup waiting on that load.
+function worktreeReady() {
+  return Effect.gen(function* () {
+    const events = yield* Queue.unbounded<GlobalEvent>()
+    const on = (event: GlobalEvent) => {
+      if (event.payload.type === WorktreeEvent.Ready.type || event.payload.type === WorktreeEvent.Failed.type)
+        Queue.offerUnsafe(events, event)
+    }
+    GlobalBus.on("event", on)
+    yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", on)))
+
+    return (directory: string) =>
+      Effect.gen(function* () {
+        while (true) {
+          const event = yield* Queue.take(events)
+          if (event.directory !== directory) continue
+          if (event.payload.type === WorktreeEvent.Failed.type)
+            return yield* Effect.die(new Error(`worktree bootstrap failed: ${event.payload.properties.message}`))
+          return
+        }
+      })
+  })
 }
 
 function trace(options: Options, scenario: ActiveScenario, phase: string) {
