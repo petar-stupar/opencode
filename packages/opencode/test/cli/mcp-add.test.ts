@@ -5,7 +5,7 @@ import { cliIt } from "../lib/cli-process"
 
 describe("opencode mcp add (non-interactive subprocess)", () => {
   cliIt.concurrent(
-    "adds a remote server with HTTP headers",
+    "rejects remote MCP setup without writing configuration",
     ({ home, opencode }) =>
       Effect.gen(function* () {
         const result = yield* opencode.spawn([
@@ -19,25 +19,17 @@ describe("opencode mcp add (non-interactive subprocess)", () => {
           "--header",
           "X-Option=one=two",
         ])
-        opencode.expectExit(result, 0)
+        opencode.expectExit(result, 1)
 
-        const config = yield* Effect.promise(() =>
-          Bun.file(path.join(home, ".config", "opencode", "opencode.json")).json(),
-        )
-        expect(config.mcp.github).toEqual({
-          type: "remote",
-          url: "https://example.com/mcp",
-          headers: {
-            Authorization: "Bearer {env:GITHUB_TOKEN}",
-            "X-Option": "one=two",
-          },
-        })
+        expect(
+          yield* Effect.promise(() => Bun.file(path.join(home, ".config", "opencode", "opencode.json")).exists()),
+        ).toBe(false)
       }),
     60_000,
   )
 
   cliIt.concurrent(
-    "adds a local server while preserving argv and environment values",
+    "rejects local MCP setup without starting a server",
     ({ home, opencode }) =>
       Effect.gen(function* () {
         const result = yield* opencode.spawn([
@@ -55,19 +47,11 @@ describe("opencode mcp add (non-interactive subprocess)", () => {
           "--label",
           "two words",
         ])
-        opencode.expectExit(result, 0)
+        opencode.expectExit(result, 1)
 
-        const config = yield* Effect.promise(() =>
-          Bun.file(path.join(home, ".config", "opencode", "opencode.json")).json(),
-        )
-        expect(config.mcp.local).toEqual({
-          type: "local",
-          command: ["npx", "-y", "@example/server", "--label", "two words"],
-          environment: {
-            API_KEY: "secret",
-            VALUE: "one=two",
-          },
-        })
+        expect(
+          yield* Effect.promise(() => Bun.file(path.join(home, ".config", "opencode", "opencode.json")).exists()),
+        ).toBe(false)
       }),
     60_000,
   )

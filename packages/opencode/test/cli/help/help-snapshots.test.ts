@@ -44,7 +44,6 @@ function normalize(text: string): string {
 // top-level help on `--help` and exits 1; not a real opencode command.
 const TOP_LEVEL = [
   "acp",
-  "mcp",
   "attach",
   "run",
   "debug",
@@ -69,10 +68,6 @@ const TOP_LEVEL = [
 // distinct argv shape, not every leaf. Add new entries when a subcommand
 // gains user-visible flags that we want to lock in.
 const SUBCOMMANDS = [
-  ["mcp", "list"],
-  ["mcp", "add"],
-  ["mcp", "auth"],
-  ["mcp", "logout"],
   ["providers", "list"],
   ["providers", "login"],
   ["providers", "logout"],
@@ -102,6 +97,7 @@ describe("opencode CLI help-text snapshots", () => {
         expect(topLevel.exitCode).toBe(0)
         expect(topLevel.stderr.endsWith("\n")).toBe(true)
         expect(topLevel.stderr).toContain("--mini")
+        expect(topLevel.stderr).not.toContain("opencode mcp")
         expect(topLevel.stderr).not.toContain("--thinking")
         expect(topLevel.stderr).not.toContain("--variant")
         expect(topLevel.stderr).not.toContain("--demo")

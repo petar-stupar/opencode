@@ -61,14 +61,15 @@ describe("LocationServiceMap", () => {
     ),
   )
 
-  it.live("isolates location state while sharing location policy with catalog", () =>
+  it.live("isolates provider policy while restricting tools in every location", () =>
     Effect.acquireRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
       (dirs) => Effect.promise(() => Promise.all(dirs.map((dir) => dir[Symbol.asyncDispose]())).then(() => undefined)),
     ).pipe(
       Effect.flatMap(([blocked, allowed]) =>
         Effect.gen(function* () {
-          yield* (yield* ApplicationTools.Service).register({
+          const applications = yield* ApplicationTools.Service
+          yield* applications.register({
             application_context: Tool.make({
               description: "Read application context",
               input: Schema.Struct({}),
@@ -89,10 +90,11 @@ describe("LocationServiceMap", () => {
             Effect.gen(function* () {
               yield* Reference.Service
               const catalog = yield* Catalog.Service
+              const registry = yield* ToolRegistry.Service
               yield* catalog.transform((editor) => editor.provider.update(ProviderV2.ID.make("test"), () => {}))
               return {
                 providers: yield* catalog.provider.all(),
-                tools: yield* toolDefinitions(yield* ToolRegistry.Service),
+                tools: yield* toolDefinitions(registry),
               }
             }).pipe(
               Effect.scoped,
@@ -104,36 +106,32 @@ describe("LocationServiceMap", () => {
           const blockedState = yield* update(blocked.path)
           expect(blockedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(false)
           expect(blockedState.tools.map((tool) => tool.name).sort()).toEqual([
-            "application_context",
-            "apply_patch",
-            "bash",
-            "edit",
-            "glob",
-            "grep",
+            "directory_create",
+            "directory_remove",
+            "directory_rename",
+            "directory_walk",
+            "file_append",
+            "file_create",
+            "file_read",
+            "file_remove",
+            "file_rename",
+            "file_write",
             "question",
-            "read",
-            "skill",
-            "todowrite",
-            "webfetch",
-            "websearch",
-            "write",
           ])
           const allowedState = yield* update(allowed.path)
           expect(allowedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(true)
           expect(allowedState.tools.map((tool) => tool.name).sort()).toEqual([
-            "application_context",
-            "apply_patch",
-            "bash",
-            "edit",
-            "glob",
-            "grep",
+            "directory_create",
+            "directory_remove",
+            "directory_rename",
+            "directory_walk",
+            "file_append",
+            "file_create",
+            "file_read",
+            "file_remove",
+            "file_rename",
+            "file_write",
             "question",
-            "read",
-            "skill",
-            "todowrite",
-            "webfetch",
-            "websearch",
-            "write",
           ])
         }),
       ),

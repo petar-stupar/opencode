@@ -9,13 +9,14 @@ describe("opencode acp initialize/auth subprocess", () => {
     "initialize responds with capabilities",
     ({ opencode }) =>
       Effect.gen(function* () {
-        const initialized = yield* initialize(yield* createAcpClient({ opencode }))
+        const acp = yield* createAcpClient({ opencode })
+        const initialized = yield* initialize(acp)
 
         expect(initialized.protocolVersion).toBe(1)
         expect(initialized.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true)
         expect(initialized.agentCapabilities?.promptCapabilities?.image).toBe(true)
-        expect(initialized.agentCapabilities?.mcpCapabilities?.http).toBe(true)
-        expect(initialized.agentCapabilities?.mcpCapabilities?.sse).toBe(true)
+        expect(initialized.agentCapabilities?.mcpCapabilities?.http).toBe(false)
+        expect(initialized.agentCapabilities?.mcpCapabilities?.sse).toBe(false)
         expect(initialized.agentCapabilities?.loadSession).toBe(true)
         expect(initialized.agentCapabilities?.sessionCapabilities?.close).toEqual({})
         expect(initialized.agentCapabilities?.sessionCapabilities?.fork).toEqual({})

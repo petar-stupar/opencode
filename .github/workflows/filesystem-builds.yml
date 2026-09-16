@@ -39,11 +39,11 @@ jobs:
           OPENCODE_CHANNEL: filesystem
           OPENCODE_VERSION: 0.0.0-filesystem-${{ github.sha }}
       - name: Archive executable with permissions
-        run: tar -czf "$RUNNER_TEMP/opencode-${{ matrix.name }}.tar.gz" -C packages/opencode/dist .
+        run: tar -czf "opencode-${{ matrix.name }}.tar.gz" -C packages/opencode/dist .
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: opencode-${{ matrix.name }}
-          path: ${{ runner.temp }}/opencode-${{ matrix.name }}.tar.gz
+          path: opencode-${{ matrix.name }}.tar.gz
           if-no-files-found: error
           retention-days: 14
 

@@ -2,7 +2,7 @@
  * Reproducer for snapshot race condition with instant tool execution.
  *
  * When the mock LLM returns a tool call response instantly, the AI SDK
- * processes the tool call and executes the tool (e.g. apply_patch) before
+ * processes the tool call and executes the tool (e.g. file_write) before
  * the processor's start-step handler can capture a pre-tool snapshot.
  * Both the "before" and "after" snapshots end up with the same git tree
  * hash, so computeDiff returns empty and the session summary shows 0 files.
@@ -135,12 +135,11 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
 
-      // Use bash tool (always registered) to create a file
-      const command = `echo 'snapshot race test content' > ${path.join(dir, "race-test.txt")}`
-      yield* llm.toolMatch((hit) => JSON.stringify(hit.body).includes("create the file"), "bash", {
-        command,
+      yield* llm.toolMatch((hit) => JSON.stringify(hit.body).includes("create the file"), "file_write", {
+        path: path.join(dir, "race-test.txt"),
+        content: "snapshot race test content\n",
       })
-      yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("bash"), "done")
+      yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("file_write"), "done")
 
       // Seed user message
       yield* prompt.prompt({
@@ -171,7 +170,7 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
       )
       const tool = allMsgs
         .flatMap((m) => m.parts)
-        .find((p): p is SessionV1.ToolPart => p.type === "tool" && p.tool === "bash")
+        .find((p): p is SessionV1.ToolPart => p.type === "tool" && p.tool === "file_write")
       expect(tool?.state.status).toBe("completed")
       if (!user) throw new Error("Expected user message")
 

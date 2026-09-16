@@ -55,11 +55,10 @@ runs:
 
     - name: Install dependencies
       run: |
-        # Workaround for patched peer variants
-        # e.g. ./patches/ for standard-openapi
-        # https://github.com/oven-sh/bun/issues/28147
+        # Copy files on Windows so patched cache entries are not hardlinked into
+        # the workspace. Hoisting can race while replacing patched cache entries.
         if [ "$RUNNER_OS" = "Windows" ]; then
-          bun install --linker hoisted ${{ inputs.install-flags }}
+          bun install --linker isolated --backend copyfile ${{ inputs.install-flags }}
         else
           bun install ${{ inputs.install-flags }}
         fi

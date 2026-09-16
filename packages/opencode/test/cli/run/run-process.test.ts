@@ -27,12 +27,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     "prints each completed text part in order around a tool continuation",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.push(
-          reply().text("  before tool  ").tool("bash", {
-            command: "printf tool-output",
-            description: "Print deterministic output",
-          }),
-        )
+        yield* llm.push(reply().text("  before tool  ").tool("directory_walk", { path: "." }))
         yield* llm.text("  after tool  ")
 
         const result = yield* opencode.run("use a tool", {
@@ -88,12 +83,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     "unknown stream finish preserves partial output and continues",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.push(
-          reply().text("partial response").tool("bash", {
-            command: "printf tool",
-            description: "Print deterministic output",
-          }),
-        )
+        yield* llm.push(reply().text("partial response").tool("directory_walk", { path: "." }))
         yield* llm.fail("upstream provider exploded mid-stream")
         yield* llm.text("recovered")
         const result = yield* opencode.run("trigger midstream error", { timeoutMs: 30_000 })
@@ -168,12 +158,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     "--format json preserves reasoning, tool, and continuation ordering",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.push(
-          reply().reason("reasoning").text("before").tool("bash", {
-            command: "printf tool",
-            description: "Print deterministic output",
-          }),
-        )
+        yield* llm.push(reply().reason("reasoning").text("before").tool("directory_walk", { path: "." }))
         yield* llm.text("after")
 
         const result = yield* opencode.run("exercise json records", {
@@ -199,7 +184,7 @@ describe("opencode run (non-interactive subprocess)", () => {
         expect(events.find((event) => event.type === "tool_use")?.part).toEqual(
           expect.objectContaining({
             type: "tool",
-            tool: "bash",
+            tool: "directory_walk",
             state: expect.objectContaining({ status: "completed" }),
           }),
         )
@@ -217,12 +202,7 @@ describe("opencode run (non-interactive subprocess)", () => {
     "--format json records an unknown stream finish and continuation",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.push(
-          reply().text("partial json").tool("bash", {
-            command: "printf tool",
-            description: "Print deterministic output",
-          }),
-        )
+        yield* llm.push(reply().text("partial json").tool("directory_walk", { path: "." }))
         yield* llm.fail("provider failed")
         yield* llm.text("recovered")
         const result = yield* opencode.run("fail after output", { format: "json" })
@@ -252,30 +232,36 @@ describe("opencode run (non-interactive subprocess)", () => {
     "rejects requested permissions by default and allows them with the dangerous flag",
     ({ home, llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.tool("bash", { command: "rm -f denied-file", description: "Remove a test file" })
+        yield* llm.tool("file_create", { path: "denied-file", content: "denied" })
         yield* llm.text("continued after rejection")
-        const denied = yield* opencode.run("request permission", { permission: { bash: "ask" } })
+        const denied = yield* opencode.run("request permission", {
+          permission: { edit: "ask" },
+          extraArgs: ["--dir", home],
+        })
         opencode.expectExit(denied, 0)
-        expect(denied.stderr).toContain("permission requested: bash")
+        expect(denied.stderr).toContain("permission requested: edit")
         expect(denied.stdout).toBe("")
+        expect(yield* Effect.promise(() => Bun.file(`${home}/denied-file`).exists())).toBe(false)
 
         yield* llm.reset
-        yield* llm.tool("bash", { command: "rm -f allowed-file", description: "Remove a test file" })
+        yield* llm.tool("file_create", { path: "allowed-file", content: "allowed" })
         yield* llm.text("continued after approval")
         const allowed = yield* opencode.run("request permission", {
-          permission: { bash: "ask" },
-          extraArgs: ["--dangerously-skip-permissions"],
+          permission: { edit: "ask" },
+          extraArgs: ["--dir", home, "--dangerously-skip-permissions"],
         })
         opencode.expectExit(allowed, 0)
-        expect(allowed.stderr).not.toContain("permission requested: bash")
+        expect(allowed.stderr).not.toContain("permission requested: edit")
+        expect(allowed.stderr).not.toContain("Error:")
         expect(allowed.stdout).toContain("continued after approval")
+        expect(yield* Effect.promise(() => Bun.file(`${home}/allowed-file`).text())).toBe("allowed")
 
         yield* llm.reset
-        yield* llm.tool("bash", { command: "touch explicitly-denied", description: "Create a denied marker" })
+        yield* llm.tool("file_create", { path: "explicitly-denied", content: "denied" })
         yield* llm.text("continued after explicit denial")
         const explicitlyDenied = yield* opencode.run("request denied permission", {
-          permission: { bash: "deny" },
-          extraArgs: ["--dangerously-skip-permissions"],
+          permission: { edit: "deny" },
+          extraArgs: ["--dir", home, "--dangerously-skip-permissions"],
         })
         opencode.expectExit(explicitlyDenied, 0)
         expect(explicitlyDenied.stdout).toContain("continued after explicit denial")
