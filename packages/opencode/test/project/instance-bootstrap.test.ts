@@ -67,15 +67,19 @@ function waitDisposed(directory: string) {
   })
 }
 
-it.live("InstanceStore.provide runs InstanceBootstrap before effect", () =>
-  Effect.gen(function* () {
-    const tmp = yield* bootstrapFixture
-    const store = yield* InstanceStore.Service
+// Cold bootstrap waits for real Git processes and plugin dependency installation.
+it.live(
+  "InstanceStore.provide runs InstanceBootstrap before effect",
+  () =>
+    Effect.gen(function* () {
+      const tmp = yield* bootstrapFixture
+      const store = yield* InstanceStore.Service
 
-    yield* store.provide({ directory: tmp.directory }, Effect.succeed("ok"))
+      yield* store.provide({ directory: tmp.directory }, Effect.succeed("ok"))
 
-    expect(existsSync(tmp.marker)).toBe(true)
-  }),
+      expect(existsSync(tmp.marker)).toBe(true)
+    }),
+  process.platform === "win32" ? 60_000 : 30_000,
 )
 
 it.live("CLI bootstrap runs InstanceBootstrap before callback", () =>
