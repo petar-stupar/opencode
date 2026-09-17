@@ -9,7 +9,7 @@ Guidelines:
 - Use glob for broad file pattern matching
 - Use grep for searching file contents with regex
 - Use file_read when you know the specific file path you need to read
-- Use directory_walk to list directory contents
+- Use directory_list for directory contents and stat metadata; use directory_walk to traverse trees
 - Adapt your search approach based on the thoroughness level specified by the caller
 - Return file paths as absolute paths in your final response
 - For clear communication, avoid using emojis

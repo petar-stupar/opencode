@@ -16,12 +16,13 @@ export const names = [
   "directory_create",
   "directory_rename",
   "directory_remove",
+  "directory_list",
   "directory_walk",
 ] as const
 
 export const prompt = `You are a coding assistant with filesystem tools and coding workflow tools.
 Use file_read, file_write, file_append, file_create, file_remove, file_rename,
-directory_create, directory_rename, directory_remove, and directory_walk for direct filesystem operations.
+directory_create, directory_rename, directory_remove, directory_list, and directory_walk for direct filesystem operations.
 Use edit/apply_patch for source edits, glob/grep for targeted source search, skill to load instructions,
 todowrite to track work, question to ask the user, and task/lsp/execute when present in your tool catalog.
 Custom plugin tools may also be available; use only the tools actually advertised for this session.
@@ -32,7 +33,8 @@ control files; edit/patch may read and rewrite files, format source, and notify 
 Scope content searches to source directories, since reading service files may itself perform an action.
 There are no built-in shell, web, or MCP tools. Use the documented mounted interfaces for those services.
 Code mode orchestrates enabled tools with their existing permissions; it has no ambient host access.
-Do not invent mount paths or control protocols. directory_walk lists names without reading contents.`
+Do not invent mount paths or control protocols. directory_list returns entry metadata; directory_walk traverses names.
+Neither operation reads file contents.`
 
 const Path = Schema.String.check(Schema.isMinLength(1)).annotate({
   description: "Path relative to the working directory, or an absolute path to a mounted filesystem",
@@ -55,6 +57,13 @@ export const inputs = {
   directory_create: Schema.Struct({ path: Path }),
   directory_rename: Schema.Struct({ path: Path, destination: Destination }),
   directory_remove: Schema.Struct({ path: Path }),
+  directory_list: Schema.Struct({
+    path: Path,
+    limit: Schema.optional(
+      Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(2000)),
+    ),
+    offset: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
+  }),
   directory_walk: Schema.Struct({
     path: Path,
     depth: Schema.optional(
@@ -92,6 +101,8 @@ export const descriptions: Record<Name, string> = {
     "Rename a directory. Destination must not exist; parent must exist. No cross-filesystem copy/delete fallback.",
   directory_remove:
     "Remove an empty directory. Nonempty directories must be traversed and their children explicitly removed first.",
+  directory_list:
+    "List immediate directory entries, including hidden and ignored files, with name, relative path, type, size, timestamps, mode, ownership, inode, device and allocation metadata. Does not recurse or read file contents. Symlinks retain type symlink and report targetType and target metadata after permission checks. Unavailable metadata is null; missing or unreadable entries report an error. Size and block size are decimal strings in bytes; timestamps are ISO 8601. Returns JSON with entries, total, truncated and nextOffset. Default limit 50, maximum 2000; offset defaults to zero. Pages are sorted by name and are not a snapshot across calls.",
   directory_walk:
     "List a directory tree, including hidden and ignored entries, without reading files. Follows symlinks with cycle detection and permission checks for external targets. Default depth 1 and limit 200 entries. Increase depth or walk a listed subdirectory to continue. Output reports truncation.",
 }
@@ -100,7 +111,7 @@ export class Error extends Schema.TaggedErrorClass<Error>()("FilesystemTools.Err
 
 export function action(name: string) {
   if (name === "question") return "question"
-  return name === "file_read" || name === "directory_walk" ? "read" : "edit"
+  return name === "file_read" || name === "directory_list" || name === "directory_walk" ? "read" : "edit"
 }
 
 /** Shared I/O leaves; each runtime owns its own permission context and tool representation. */
@@ -150,6 +161,50 @@ export const execute = Effect.fn("FilesystemTools.execute")(function* (
         })
       }),
     )
+  }
+  if (name === "directory_list") {
+    const children = (yield* fs.readDirectoryEntries(target.canonical)).toSorted((a, b) => a.name.localeCompare(b.name))
+    const offset = input.offset ?? 0
+    const entries = yield* Effect.forEach(children.slice(offset, offset + (input.limit ?? 50)), (child) =>
+      Effect.gen(function* () {
+        const entry = { name: child.name, path: child.name, type: child.type }
+        const absolute = path.join(target.canonical, child.name)
+        const canonical = yield* (child.type === "symlink" ? fs.realPath(absolute) : Effect.succeed(absolute)).pipe(
+          Effect.result,
+        )
+        if (canonical._tag === "Failure") return { ...entry, error: String(canonical.failure) }
+        // Authorization failures stop the listing; they must not become per-entry stat errors.
+        if (authorize) yield* authorize(canonical.success)
+        const stat = yield* fs.stat(canonical.success).pipe(Effect.result)
+        if (stat._tag === "Failure") return { ...entry, error: String(stat.failure) }
+        const info = stat.success
+        return {
+          ...entry,
+          type: child.type === "symlink" ? "symlink" : info.type.toLowerCase(),
+          ...(child.type === "symlink" ? { targetType: info.type.toLowerCase() } : {}),
+          size: info.size.toString(),
+          mtime: Option.getOrNull(Option.map(info.mtime, (time) => time.toISOString())),
+          atime: Option.getOrNull(Option.map(info.atime, (time) => time.toISOString())),
+          birthtime: Option.getOrNull(Option.map(info.birthtime, (time) => time.toISOString())),
+          dev: info.dev,
+          ino: Option.getOrNull(info.ino),
+          mode: info.mode,
+          nlink: Option.getOrNull(info.nlink),
+          uid: Option.getOrNull(info.uid),
+          gid: Option.getOrNull(info.gid),
+          rdev: Option.getOrNull(info.rdev),
+          blksize: Option.getOrNull(Option.map(info.blksize, (size) => size.toString())),
+          blocks: Option.getOrNull(info.blocks),
+        }
+      }),
+    )
+    const truncated = offset + entries.length < children.length
+    return JSON.stringify({
+      entries,
+      total: children.length,
+      truncated,
+      nextOffset: truncated ? offset + entries.length : null,
+    })
   }
   if (name === "directory_walk") {
     const entries: { path: string; type: FSUtil.DirEntry["type"] }[] = []
@@ -223,7 +278,11 @@ export const resolve = Effect.fn("FilesystemTools.resolve")(function* (
     path: input.path,
     kind,
     followSymlinks:
-      name === "file_read" || name === "file_write" || name === "file_append" || name === "directory_walk",
+      name === "file_read" ||
+      name === "file_write" ||
+      name === "file_append" ||
+      name === "directory_list" ||
+      name === "directory_walk",
     allowExternalSymlinks: true,
   })
   const destination =

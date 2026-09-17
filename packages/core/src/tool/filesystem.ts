@@ -85,6 +85,7 @@ const layer = Layer.effectDiscard(
         directory_create: make("directory_create", FilesystemTools.inputs.directory_create),
         directory_rename: make("directory_rename", FilesystemTools.inputs.directory_rename),
         directory_remove: make("directory_remove", FilesystemTools.inputs.directory_remove),
+        directory_list: make("directory_list", FilesystemTools.inputs.directory_list),
         directory_walk: make("directory_walk", FilesystemTools.inputs.directory_walk),
       })
       .pipe(Effect.orDie)

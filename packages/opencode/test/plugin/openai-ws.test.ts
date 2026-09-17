@@ -317,19 +317,20 @@ describe("plugin.openai.ws-pool", () => {
     })
     const fetch = OpenAIWebSocketPool.createWebSocketFetch({
       url: server.url,
-      idleTimeout: 20,
+      // This deadline also covers active socket I/O before the connection becomes idle.
+      idleTimeout: 1_000,
     })
 
     const first = await fetch(server.url, streamRequest())
     expect(await first.text()).toContain("data: [DONE]")
-    await waitFor(() => closed === 1, "idle websocket was not pruned")
+    await waitFor(() => closed === 1, "idle websocket was not pruned", 5_000)
 
     const second = await fetch(server.url, streamRequest())
 
     expect(await second.text()).toContain("data: [DONE]")
     expect(connections).toBe(2)
     fetch.close()
-  })
+  }, 10_000)
 
   test("invalidates but does not reuse a socket after terminal failure frames", async () => {
     let connections = 0
@@ -900,10 +901,10 @@ function closeHttpServer(server: HttpServer) {
   return new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
 }
 
-async function waitFor(predicate: () => boolean, message: string) {
+async function waitFor(predicate: () => boolean, message: string, timeout = 1_000) {
   const started = Date.now()
   while (!predicate()) {
-    if (Date.now() - started > 1_000) throw new Error(message)
+    if (Date.now() - started > timeout) throw new Error(message)
     await new Promise((resolve) => setTimeout(resolve, 1))
   }
 }

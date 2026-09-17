@@ -100,37 +100,41 @@ describe("GoogleVertexAnthropicPlugin", () => {
     ),
   )
 
-  it.effect("creates SDKs from legacy env fallback and default location", () =>
-    withEnv(
-      {
-        GOOGLE_CLOUD_PROJECT: undefined,
-        GCP_PROJECT: "gcp-project",
-        GCLOUD_PROJECT: "gcloud-project",
-        GOOGLE_CLOUD_LOCATION: undefined,
-        VERTEX_LOCATION: undefined,
-        GOOGLE_VERTEX_LOCATION: "ignored-location",
-      },
-      () =>
-        Effect.gen(function* () {
-          const plugin = yield* PluginV2.Service
-          const aisdk = yield* AISDK.Service
-          yield* addPlugin(GoogleVertexAnthropicPlugin)
-          const result = yield* aisdk.runSDK({
-            model: ModelV2.Info.make({
-              ...ModelV2.Info.empty(
-                ProviderV2.ID.make("google-vertex-anthropic"),
-                ModelV2.ID.make("claude-sonnet-4-5"),
-              ),
-              api: { id: ModelV2.ID.make("claude-sonnet-4-5"), type: "aisdk", package: "test-provider" },
-            }),
-            package: "@ai-sdk/google-vertex/anthropic",
-            options: { name: "google-vertex-anthropic" },
-          })
-          expect(result.sdk.languageModel("claude-sonnet-4-5").config.baseURL).toBe(
-            "https://aiplatform.googleapis.com/v1/projects/gcp-project/locations/global/publishers/anthropic/models",
-          )
-        }),
-    ),
+  it.effect(
+    "creates SDKs from legacy env fallback and default location",
+    () =>
+      withEnv(
+        {
+          GOOGLE_CLOUD_PROJECT: undefined,
+          GCP_PROJECT: "gcp-project",
+          GCLOUD_PROJECT: "gcloud-project",
+          GOOGLE_CLOUD_LOCATION: undefined,
+          VERTEX_LOCATION: undefined,
+          GOOGLE_VERTEX_LOCATION: "ignored-location",
+        },
+        () =>
+          Effect.gen(function* () {
+            const plugin = yield* PluginV2.Service
+            const aisdk = yield* AISDK.Service
+            yield* addPlugin(GoogleVertexAnthropicPlugin)
+            const result = yield* aisdk.runSDK({
+              model: ModelV2.Info.make({
+                ...ModelV2.Info.empty(
+                  ProviderV2.ID.make("google-vertex-anthropic"),
+                  ModelV2.ID.make("claude-sonnet-4-5"),
+                ),
+                api: { id: ModelV2.ID.make("claude-sonnet-4-5"), type: "aisdk", package: "test-provider" },
+              }),
+              package: "@ai-sdk/google-vertex/anthropic",
+              options: { name: "google-vertex-anthropic" },
+            })
+            expect(result.sdk.languageModel("claude-sonnet-4-5").config.baseURL).toBe(
+              "https://aiplatform.googleapis.com/v1/projects/gcp-project/locations/global/publishers/anthropic/models",
+            )
+          }),
+      ),
+    // The first SDK call also loads the Google authentication dependency tree.
+    process.platform === "win32" ? 30_000 : 5_000,
   )
 
   it.effect("uses GOOGLE_CLOUD_LOCATION before VERTEX_LOCATION when creating SDKs", () =>

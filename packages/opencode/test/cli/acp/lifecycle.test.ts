@@ -18,7 +18,10 @@ describe("opencode acp lifecycle subprocess", () => {
         const acp = yield* opencode.acp()
         acp.close()
 
-        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(5)))
+        // EOF is sent before startup finishes, so this includes cold CLI loading on Windows.
+        const code = yield* Effect.promise(() => acp.exited).pipe(
+          Effect.timeout(Duration.seconds(process.platform === "win32" ? 30 : 5)),
+        )
         expect(code).toBe(0)
       }),
     60_000,
