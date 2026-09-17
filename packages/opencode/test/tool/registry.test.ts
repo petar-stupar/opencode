@@ -34,6 +34,7 @@ const expected = [
   "file_remove",
   "file_rename",
   "directory_create",
+  "directory_list",
   "directory_rename",
   "directory_remove",
   "directory_walk",
@@ -113,9 +114,13 @@ describe("filesystem-oriented legacy registry", () => {
       const write = tools.find((tool) => tool.id === "file_write")!
       const append = tools.find((tool) => tool.id === "file_append")!
       const read = tools.find((tool) => tool.id === "file_read")!
+      const list = tools.find((tool) => tool.id === "directory_list")!
       yield* write.execute({ path: "file", content: "one" }, context)
       yield* append.execute({ path: "file", content: "two" }, context)
       expect(JSON.parse((yield* read.execute({ path: "file" }, context)).output).content).toBe("onetwo")
+      expect(JSON.parse((yield* list.execute({ path: "." }, context)).output).entries).toContainEqual(
+        expect.objectContaining({ name: "file", type: "file", size: "6" }),
+      )
     }),
   )
 })

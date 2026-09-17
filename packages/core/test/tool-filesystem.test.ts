@@ -35,6 +35,7 @@ const expected = [
   "file_remove",
   "file_rename",
   "directory_create",
+  "directory_list",
   "directory_rename",
   "directory_remove",
   "directory_walk",
@@ -136,7 +137,7 @@ describe("filesystem-oriented distribution", () => {
           (yield* toolDefinitions(registry, [{ action: "edit", resource: "*", effect: "deny" }]))
             .map((tool) => tool.name)
             .sort(),
-        ).toEqual(["directory_walk", "file_read", "glob", "grep", "question", "skill", "todowrite"])
+        ).toEqual(["directory_list", "directory_walk", "file_read", "glob", "grep", "question", "skill", "todowrite"])
         expect(
           text(
             yield* call(registry, "question", {
@@ -237,6 +238,118 @@ describe("filesystem-oriented distribution", () => {
         expect((yield* call(registry, "file_write", { path: "file" })).type).toBe("error")
       }),
     )
+  })
+
+  test("lists immediate entries with stat metadata and bounded pages", async () => {
+    await using tmp = await tmpdir()
+    await fs.writeFile(path.join(tmp.path, ".hidden"), "hello")
+    await fs.writeFile(path.join(tmp.path, "empty"), "")
+    await fs.mkdir(path.join(tmp.path, "source"))
+    await fs.writeFile(path.join(tmp.path, "source", "nested"), "not listed")
+    const stat = await fs.stat(path.join(tmp.path, ".hidden"))
+    await withTools(tmp.path, (registry) =>
+      Effect.gen(function* () {
+        const result = JSON.parse(text(yield* call(registry, "directory_list", { path: ".", limit: 2 })))
+        expect(result).toMatchObject({ total: 3, truncated: true, nextOffset: 2 })
+        expect(result.entries).toHaveLength(2)
+        expect(result.entries[0]).toEqual({
+          name: ".hidden",
+          path: ".hidden",
+          type: "file",
+          size: "5",
+          mtime: stat.mtime.toISOString(),
+          atime: stat.atime.toISOString(),
+          birthtime: stat.birthtime.toISOString(),
+          dev: stat.dev,
+          ino: stat.ino,
+          mode: stat.mode,
+          nlink: stat.nlink,
+          uid: stat.uid,
+          gid: stat.gid,
+          rdev: stat.rdev,
+          blksize: stat.blksize.toString(),
+          blocks: stat.blocks,
+        })
+        expect(result.entries[1]).toMatchObject({ name: "empty", size: "0" })
+        const last = JSON.parse(text(yield* call(registry, "directory_list", { path: ".", offset: result.nextOffset })))
+        expect(last).toMatchObject({ total: 3, truncated: false, nextOffset: null })
+        expect(last.entries).toHaveLength(1)
+        expect(last.entries[0]).toMatchObject({ name: "source", type: "directory" })
+        expect(JSON.parse(text(yield* call(registry, "directory_list", { path: ".", offset: 3 })))).toEqual({
+          entries: [],
+          total: 3,
+          truncated: false,
+          nextOffset: null,
+        })
+        for (const input of [
+          { path: ".", offset: -1 },
+          { path: ".", offset: 0.5 },
+          { path: ".", limit: 0 },
+          { path: ".", limit: 2001 },
+          { path: "empty" },
+          { path: "missing" },
+        ])
+          expect((yield* call(registry, "directory_list", input)).type).toBe("error")
+      }),
+    )
+  })
+
+  test("lists symlink target metadata without recursing and preserves broken links", async () => {
+    await using tmp = await tmpdir()
+    await fs.mkdir(path.join(tmp.path, "source"))
+    await fs.writeFile(path.join(tmp.path, "source", "file"), "hello")
+    await fs.symlink("source", path.join(tmp.path, "alias"), "dir")
+    await fs.symlink("file", path.join(tmp.path, "source", "link"))
+    await fs.symlink("missing", path.join(tmp.path, "source", "broken"))
+    await fs.symlink(".", path.join(tmp.path, "source", "cycle"), "dir")
+    await withTools(tmp.path, (registry) =>
+      Effect.gen(function* () {
+        const result = JSON.parse(text(yield* call(registry, "directory_list", { path: "alias" })))
+        expect(result).toMatchObject({ total: 4, truncated: false, nextOffset: null })
+        expect(result.entries).toContainEqual(
+          expect.objectContaining({ name: "link", type: "symlink", targetType: "file", size: "5" }),
+        )
+        expect(result.entries).toContainEqual(
+          expect.objectContaining({ name: "cycle", type: "symlink", targetType: "directory" }),
+        )
+        expect(result.entries).toContainEqual({
+          name: "broken",
+          path: "broken",
+          type: "symlink",
+          error: expect.any(String),
+        })
+      }),
+    )
+  })
+
+  test("authorizes directory listings and external symlink metadata as reads", async () => {
+    await using tmp = await tmpdir()
+    await using external = await tmpdir()
+    await fs.writeFile(path.join(external.path, "file"), "outside")
+    await fs.symlink(path.join(external.path, "file"), path.join(tmp.path, "link"))
+    await withTools(tmp.path, (registry) =>
+      Effect.gen(function* () {
+        const result = JSON.parse(text(yield* call(registry, "directory_list", { path: "." })))
+        expect(result.entries[0]).toMatchObject({ name: "link", type: "symlink", targetType: "file", size: "7" })
+      }),
+    )
+    for (const deny of ["external_directory", "read"]) {
+      const assertions: PermissionV2.AssertInput[] = []
+      await withTools(
+        tmp.path,
+        (registry) =>
+          Effect.gen(function* () {
+            expect((yield* call(registry, "directory_list", { path: "." })).type).toBe("error")
+            expect(
+              (yield* toolDefinitions(registry, [{ action: "read", resource: "*", effect: "deny" }])).map(
+                (tool) => tool.name,
+              ),
+            ).not.toContain("directory_list")
+          }),
+        { deny, assertions },
+      )
+      expect(assertions.some((input) => input.action === deny)).toBe(true)
+    }
   })
 
   test("follows symlinked directories, terminates cycles and includes hidden files", async () => {

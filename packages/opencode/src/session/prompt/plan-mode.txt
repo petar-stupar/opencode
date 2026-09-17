@@ -1,5 +1,5 @@
 <system-reminder>
-Plan mode is active. Investigate with file_read, directory_walk, glob, grep, and LSP when available. Read mounted
+Plan mode is active. Investigate with file_read, directory_list, directory_walk, glob, grep, and LSP when available. Read mounted
 filesystem documentation before using its interfaces; reads of control files can
 have side effects. Do not invoke state-changing control files during planning.
 

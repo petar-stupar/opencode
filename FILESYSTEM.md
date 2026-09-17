@@ -1,6 +1,6 @@
 # Filesystem-oriented OpenCode
 
-This distribution exposes `question`, ten direct filesystem operations, and coding workflow tools. Shell and web services are accessed through mounted filesystems such as terminalfs, dotnetdocfs, and webasmarkdownfs. OpenCode uses ordinary OS filesystem calls; mounting and managing 9p servers belongs to the development environment.
+This distribution exposes `question`, eleven direct filesystem operations, and coding workflow tools. Shell and web services are accessed through mounted filesystems such as terminalfs, dotnetdocfs, and webasmarkdownfs. OpenCode uses ordinary OS filesystem calls; mounting and managing 9p servers belongs to the development environment.
 
 | Tool               | Behavior                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -14,11 +14,14 @@ This distribution exposes `question`, ten direct filesystem operations, and codi
 | `directory_create` | Create one directory; its parent must exist.                                                                                    |
 | `directory_rename` | Rename a directory.                                                                                                             |
 | `directory_remove` | Remove an empty directory.                                                                                                      |
+| `directory_list`   | List immediate entries with names, types and stat metadata, without reading file contents.                                      |
 | `directory_walk`   | Traverse directories, including hidden and ignored entries, following symlinks with cycle detection.                            |
 
-Tool names use underscores for provider compatibility. Paths are relative to the active working directory or absolute. Relative `..` escapes are rejected. Absolute external paths and symlinks leading outside the working directory require `external_directory` authorization. Reads and traversal use the existing `read` permission; mutations use `edit`. Both rename endpoints are authorized. Walking a linked subtree checks its canonical path before reading that directory.
+Tool names use underscores for provider compatibility. Paths are relative to the active working directory or absolute. Relative `..` escapes are rejected. Absolute external paths and symlinks leading outside the working directory require `external_directory` authorization. Reads, listings and traversal use the existing `read` permission; mutations use `edit`. Both rename endpoints are authorized. Walking a linked subtree checks its canonical path before reading that directory.
 
 Reads default to 65,536 bytes and accept `limit` (1–65,536) and a nonnegative byte `offset`. They issue one read and never probe for EOF or automatically reread a control file. `limitReached` does not guarantee EOF when false: a service may return a short read. For ordinary files, continue with `nextOffset`. For virtual files, follow the service's own paging protocol. Text decoding is UTF-8; byte windows can split multibyte characters, so overlap windows at character boundaries when necessary.
+
+Directory listing is nonrecursive, includes hidden and ignored entries, and sorts by name. It accepts `limit` (default 200, maximum 2,000) and a nonnegative entry `offset`, returning `entries`, `total`, `truncated` and `nextOffset` (`null` at the end). Pages are not a snapshot; concurrent directory changes can shift entries. Each entry includes `name`, relative `path`, `type`, `size`, `mtime`, `atime`, `birthtime`, `mode`, `uid`, `gid`, `ino`, `nlink`, `dev`, `rdev`, `blksize` and `blocks` as supplied by the filesystem service. Sizes and block sizes are decimal strings in bytes to preserve integer precision; times are ISO 8601 strings, modes are numeric stat mode bits, and unavailable fields are `null`. A symlink retains `type: "symlink"`, with `targetType` and metadata describing the target. Every entry is authorized before returning its metadata, including external symlink targets. Broken links and failed stat calls remain visible with an `error` instead of metadata; permission denials stop the listing. The filesystem service does not currently expose `ctime`.
 
 Traversal defaults to depth 1 and 200 entries, with maximum depth 64 and 2,000 entries. It reports `truncated` when a depth or entry bound is reached. Repeated canonical directories are visited once, including cycles; descendants are reported under the first encountered path. Walk a listed subdirectory to continue. Broken symlinks remain visible. Removal of a symlink to a directory uses `file_remove`.
 
@@ -38,7 +41,7 @@ await tools.file_append({ path: "notes.txt", content: "second\n" })
 return JSON.parse(await tools.file_read({ path: "notes.txt" })).content
 ```
 
-Nested tools return output text; parse JSON explicitly for operations such as `file_read` and `directory_walk`. Each call retains normal input validation, permission checks, plugin hooks, and cancellation. Attachments are collected outside the interpreter and returned with the execute result. The interpreter provides no ambient shell, filesystem, network, or module-loading access, and cannot recursively call `execute`.
+Nested tools return output text; parse JSON explicitly for operations such as `file_read`, `directory_list`, and `directory_walk`. Each call retains normal input validation, permission checks, plugin hooks, and cancellation. Attachments are collected outside the interpreter and returned with the execute result. The interpreter provides no ambient shell, filesystem, network, or module-loading access, and cannot recursively call `execute`.
 
 Custom JavaScript/TypeScript tools and plugin hooks run as trusted host code and can themselves access processes or networks. The restricted built-in catalog is not an OS sandbox. Reserved names `bash`, `shell`, `webfetch`, `websearch`, and the `mcp_` prefix are excluded from both catalogs. MCP discovery, transports, and resource tools remain disabled. Legacy shell requests and command-template shell interpolation still fail explicitly, as do tool-based structured-output requests. Request JSON text or write a JSON file instead.
 

@@ -217,6 +217,7 @@ export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<st
   ]
   const reads = [
     "file_read",
+    "directory_list",
     "directory_walk",
     "list_mcp_resources",
     "list_mcp_resource_templates",

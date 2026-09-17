@@ -72,5 +72,6 @@ export const all = [
   make("directory_create", FilesystemTools.inputs.directory_create),
   make("directory_rename", FilesystemTools.inputs.directory_rename),
   make("directory_remove", FilesystemTools.inputs.directory_remove),
+  make("directory_list", FilesystemTools.inputs.directory_list),
   make("directory_walk", FilesystemTools.inputs.directory_walk),
 ]

@@ -534,6 +534,7 @@ it.instance("loop calls LLM and returns assistant message", () =>
         "file_remove",
         "file_rename",
         "directory_create",
+        "directory_list",
         "directory_rename",
         "directory_remove",
         "directory_walk",

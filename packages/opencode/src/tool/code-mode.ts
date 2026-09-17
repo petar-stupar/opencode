@@ -42,7 +42,7 @@ export const make = Effect.fn("CodeModeTool.make")(function* (catalog: readonly 
     Effect.succeed({
       description: [
         "Run a confined orchestration script over the enabled tools. Each call retains its normal permissions and plugin hooks.",
-        "Tools return output text; JSON.parse the output of file_read or directory_walk to access their fields.",
+        "Tools return output text; JSON.parse the output of file_read, directory_list, or directory_walk to access their fields.",
         "There is no MCP, shell, module loading, or ambient filesystem/network access. execute cannot call itself.",
         CodeMode.make({ tools: tree(() => Effect.die("Catalog preview is not executable")) }).instructions(),
       ].join("\n\n"),
