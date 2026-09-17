@@ -102,7 +102,7 @@ export const descriptions: Record<Name, string> = {
   directory_remove:
     "Remove an empty directory. Nonempty directories must be traversed and their children explicitly removed first.",
   directory_list:
-    "List immediate directory entries, including hidden and ignored files, with name, relative path, type, size, timestamps, mode, ownership, inode, device and allocation metadata. Does not recurse or read file contents. Symlinks retain type symlink and report targetType and target metadata after permission checks. Unavailable metadata is null; missing or unreadable entries report an error. Size and block size are decimal strings in bytes; timestamps are ISO 8601. Returns JSON with entries, total, truncated and nextOffset. Default limit 200, maximum 2000; offset defaults to zero. Pages are sorted by name and are not a snapshot across calls.",
+    "List immediate directory entries, including hidden and ignored files, with name, relative path, type, size, timestamps, mode, ownership, inode, device and allocation metadata. Does not recurse or read file contents. Symlinks retain type symlink and report targetType and target metadata after permission checks. Unavailable metadata is null; missing or unreadable entries report an error. Size and block size are decimal strings in bytes; timestamps are ISO 8601. Returns JSON with entries, total, truncated and nextOffset. Default limit 50, maximum 2000; offset defaults to zero. Pages are sorted by name and are not a snapshot across calls.",
   directory_walk:
     "List a directory tree, including hidden and ignored entries, without reading files. Follows symlinks with cycle detection and permission checks for external targets. Default depth 1 and limit 200 entries. Increase depth or walk a listed subdirectory to continue. Output reports truncation.",
 }
@@ -165,7 +165,7 @@ export const execute = Effect.fn("FilesystemTools.execute")(function* (
   if (name === "directory_list") {
     const children = (yield* fs.readDirectoryEntries(target.canonical)).toSorted((a, b) => a.name.localeCompare(b.name))
     const offset = input.offset ?? 0
-    const entries = yield* Effect.forEach(children.slice(offset, offset + (input.limit ?? 200)), (child) =>
+    const entries = yield* Effect.forEach(children.slice(offset, offset + (input.limit ?? 50)), (child) =>
       Effect.gen(function* () {
         const entry = { name: child.name, path: child.name, type: child.type }
         const absolute = path.join(target.canonical, child.name)

@@ -83,6 +83,41 @@ it.instance("code mode composes real filesystem operations and source editing th
   }),
 )
 
+it.instance("code mode parses the default metadata page of a large directory", () =>
+  Effect.gen(function* () {
+    const instance = yield* TestInstance
+    yield* Effect.promise(() =>
+      Promise.all(
+        Array.from({ length: 120 }, (_, index) =>
+          Bun.write(
+            path.join(instance.directory, "entries", `${index.toString().padStart(3, "0")}-${"x".repeat(120)}`),
+            "",
+          ),
+        ),
+      ),
+    )
+    const registry = yield* ToolRegistry.Service
+    const agents = yield* Agent.Service
+    const catalog = yield* registry.tools({
+      providerID: ProviderV2.ID.openai,
+      modelID: ModelV2.ID.make("gpt-6"),
+      agent: yield* agents.defaultInfo(),
+    })
+    const result = yield* catalog
+      .find((tool) => tool.id === "execute")!
+      .execute(
+        {
+          code: 'return JSON.parse(await tools.directory_list({path: "entries"}))',
+        },
+        ctx,
+      )
+    const listing = JSON.parse(result.output)
+    expect(listing).toMatchObject({ total: 120, truncated: true, nextOffset: 50 })
+    expect(listing.entries).toHaveLength(50)
+    expect(listing.entries[0]).toMatchObject({ type: "file", size: "0" })
+  }),
+)
+
 it.instance("loads a custom tool and exposes it inside code mode", () =>
   Effect.gen(function* () {
     const instance = yield* TestInstance
