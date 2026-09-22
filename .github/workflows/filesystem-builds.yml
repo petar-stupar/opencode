@@ -18,6 +18,8 @@ jobs:
         include:
           - name: linux-x64
             os: ubuntu-latest
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
           - name: macos-arm64
             os: macos-latest
           - name: windows-x64
@@ -68,3 +70,44 @@ jobs:
           path: sdks/vscode/opencode-filesystem.vsix
           if-no-files-found: error
           retention-days: 14
+
+  # Actions artifacts expire after 14 days and need a token to download, which makes
+  # them awkward to consume from a Dockerfile or an install script. Mirror the same
+  # files onto a rolling prerelease so they can be fetched by plain curl.
+  release:
+    name: Publish rolling prerelease
+    needs: [cli, vscode]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: filesystem-latest
+        run: |
+          set -euo pipefail
+          notes="Rolling build of the filesystem channel from \`${GITHUB_REF_NAME}\`.
+
+          Commit: ${GITHUB_SHA}
+          Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          These assets are replaced on every build; pin a real tag if you need a stable one."
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes "$notes" --prerelease
+          else
+            gh release create "$TAG" \
+              --title "filesystem channel (latest build)" \
+              --notes "$notes" \
+              --prerelease
+          fi
+
+          gh release upload "$TAG" $(find artifacts -type f \( -name '*.tar.gz' -o -name '*.vsix' \)) --clobber
