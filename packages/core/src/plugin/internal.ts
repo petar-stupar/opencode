@@ -85,6 +85,8 @@ import { WebFetchTool } from "../tool/plugin/webfetch.js"
 import { WebSearchTool } from "../tool/plugin/websearch.js"
 import { WellKnown } from "../wellknown.js"
 import { WriteTool } from "../tool/plugin/write.js"
+import { FilesystemPolicy } from "../tool/filesystem-policy.js"
+import { FilesystemTools } from "../tool/plugin/filesystem.js"
 import { AgentPlugin } from "./agent.js"
 import BrowserPlugin from "@opencode/plugin-browser"
 import { CommandPlugin } from "./command.js"
@@ -270,6 +272,9 @@ const post = [
 // organization statements, so plugin remove operations skip these IDs.
 export const guarded: ReadonlySet<string> = new Set([OpencodePlugin.id, ConfigPolicyPlugin.Plugin.id])
 
+// Unfiltered built-in plugin IDs, so tests can verify that FilesystemPolicy.excluded still names real plugins.
+export const builtins: readonly string[] = [...pre, ...post].map((plugin) => plugin.id)
+
 export const list = Effect.fn("PluginInternal.list")(function* () {
   // Capture only services; activation supplies the child Scope and batching context.
   const context = Context.pick(...services)(yield* Effect.context<Requirements>())
@@ -281,7 +286,8 @@ export const list = Effect.fn("PluginInternal.list")(function* () {
       }),
     )
   return {
-    pre: resolve(pre),
-    post: resolve(post),
+    // Filesystem distribution: drop excluded built-ins and add the filesystem tools.
+    pre: resolve([...FilesystemPolicy.plugins(pre), FilesystemTools.Plugin]),
+    post: resolve(FilesystemPolicy.plugins(post)),
   }
 })

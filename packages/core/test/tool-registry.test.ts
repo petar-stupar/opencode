@@ -702,14 +702,14 @@ describe("Tool", () => {
   it.effect("filters disabled tools with edit aliases and ordered wildcard precedence", () =>
     Effect.gen(function* () {
       const service = yield* Tool.Service
-      yield* transform(service, { question: make(), bash: make() }, { codemode: false })
+      yield* transform(service, { question: make(), probe: make() }, { codemode: false })
       yield* transform(service, { edit: make(), write: make() }, { codemode: false, permission: "edit" })
       const names = (permissions: Permission.Ruleset) =>
         toolDefinitions(service, permissions).pipe(Effect.map((definitions) => definitions.map((tool) => tool.name)))
 
       expect(yield* names([{ action: "question", resource: "*", effect: "deny" }])).toEqual([
-        "bash",
         "edit",
+        "probe",
         "write",
         "execute",
       ])
@@ -725,7 +725,11 @@ describe("Tool", () => {
           { action: "*", resource: "*", effect: "deny" },
         ]),
       ).toEqual([])
-      expect(yield* names([{ action: "edit", resource: "*", effect: "deny" }])).toEqual(["bash", "question", "execute"])
+      expect(yield* names([{ action: "edit", resource: "*", effect: "deny" }])).toEqual([
+        "probe",
+        "question",
+        "execute",
+      ])
     }),
   )
 

@@ -1,2 +1,10 @@
 [test]
 preload = ["./test/preload.ts"]
+# Filesystem distribution: these suites exercise tools whose names Tool.snapshot reserves
+# (shell, webfetch, websearch) or a plugin the distribution never activates (browser).
+pathIgnorePatterns = [
+  "test/tool-shell.test.ts",
+  "test/tool-webfetch.test.ts",
+  "test/tool-websearch.test.ts",
+  "test/browser-idle.test.ts",
+]

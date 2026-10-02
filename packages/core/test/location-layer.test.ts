@@ -483,18 +483,24 @@ describe("LocationServiceMap", () => {
           expect(blockedState.providers.some((provider) => provider.id === allowedID)).toBe(false)
           const blockedTools = blockedState.tools.map((tool) => tool.name)
           expect(blockedTools.filter((name) => name !== "execute").sort()).toEqual([
+            "directory_create",
+            "directory_list",
+            "directory_remove",
+            "directory_rename",
+            "directory_walk",
             "edit",
+            "file_append",
+            "file_create",
+            "file_read",
+            "file_remove",
+            "file_rename",
+            "file_write",
             "glob",
             "grep",
             "patch",
             "question",
-            "read",
-            "shell",
             "skill",
             "subagent",
-            "webfetch",
-            "websearch",
-            "write",
           ])
           const allowedState = yield* update(allowed.path, allowedID)
           expect(allowedState.providers.some((provider) => provider.id === allowedID)).toBe(true)
@@ -502,18 +508,24 @@ describe("LocationServiceMap", () => {
           const allowedTools = allowedState.tools.map((tool) => tool.name)
           expect(blockedTools.includes("execute")).toBe(allowedTools.includes("execute"))
           expect(allowedTools.filter((name) => name !== "execute").sort()).toEqual([
+            "directory_create",
+            "directory_list",
+            "directory_remove",
+            "directory_rename",
+            "directory_walk",
             "edit",
+            "file_append",
+            "file_create",
+            "file_read",
+            "file_remove",
+            "file_rename",
+            "file_write",
             "glob",
             "grep",
             "patch",
             "question",
-            "read",
-            "shell",
             "skill",
             "subagent",
-            "webfetch",
-            "websearch",
-            "write",
           ])
         }),
       ),
