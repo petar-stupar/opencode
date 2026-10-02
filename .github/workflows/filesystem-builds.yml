@@ -121,6 +121,9 @@ jobs:
 
           These assets are replaced on every build; pin a real tag if you need a stable one."
 
+          # GitHub never moves an existing release tag, so point it at this build explicitly.
+          git push --force origin "${GITHUB_SHA}:refs/tags/${TAG}"
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --notes "$notes" --prerelease
           else
