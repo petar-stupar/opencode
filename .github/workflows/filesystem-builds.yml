@@ -1,0 +1,133 @@
+name: filesystem-builds
+
+on:
+  push:
+    branches: [v2]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    name: CLI (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+          - name: macos-arm64
+            os: macos-latest
+          - name: windows-x64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build CLI and embedded web UI
+        working-directory: packages/cli
+        env:
+          OPENCODE_CHANNEL: filesystem
+          OPENCODE_VERSION: 0.0.0-filesystem-${{ github.sha }}
+          NODE_OPTIONS: ${{ runner.os == 'Windows' && '--max-old-space-size=4096' || '' }}
+        run: bun run script/build.ts --single --skip-install
+
+      - name: Verify compiled service lifecycle
+        working-directory: packages/cli
+        env:
+          NODE_OPTIONS: ${{ runner.os == 'Windows' && '--max-old-space-size=4096' || '' }}
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+        run: bun run script/service-smoke.ts
+
+      - name: Smoke test binary
+        working-directory: packages/cli
+        run: |
+          bin=$(find dist -type f \( -name opencode -o -name opencode.exe \) | head -n1)
+          if [ -z "$bin" ]; then
+            echo "No compiled opencode binary found under dist/" >&2
+            exit 1
+          fi
+          "$bin" --version
+
+      - name: Archive executable with permissions
+        run: tar -czf "opencode-${{ matrix.name }}.tar.gz" -C packages/cli/dist .
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-${{ matrix.name }}
+          path: opencode-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - name: Install extension dependencies
+        working-directory: sdks/vscode
+        run: bun install --frozen-lockfile
+      - name: Package extension
+        working-directory: sdks/vscode
+        run: bun run vsce package --no-dependencies --out opencode-filesystem.vsix
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-vscode
+          path: sdks/vscode/opencode-filesystem.vsix
+          if-no-files-found: error
+          retention-days: 14
+
+  # Actions artifacts expire after 14 days and need a token to download, which makes
+  # them awkward to consume from a Dockerfile or an install script. Mirror the same
+  # files onto a rolling prerelease so they can be fetched by plain curl.
+  release:
+    name: Publish rolling prerelease
+    needs: [cli, vscode]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: filesystem-latest
+        run: |
+          set -euo pipefail
+          notes="Rolling build of the filesystem channel from \`${GITHUB_REF_NAME}\`.
+
+          Commit: ${GITHUB_SHA}
+          Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          These assets are replaced on every build; pin a real tag if you need a stable one."
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes "$notes" --prerelease
+          else
+            gh release create "$TAG" \
+              --title "filesystem channel (latest build)" \
+              --notes "$notes" \
+              --prerelease
+          fi
+
+          gh release upload "$TAG" $(find artifacts -type f \( -name '*.tar.gz' -o -name '*.vsix' \)) --clobber

@@ -1,0 +1,47 @@
+name: filesystem-tools
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Filesystem contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - name: Run checks
+        run: bun run check
+      - name: Core filesystem contract
+        working-directory: packages/core
+        run: bun test test/tool-filesystem.test.ts test/filesystem-mcp-disabled.test.ts test/filesystem-catalog.test.ts test/location-layer.test.ts test/tool-question.test.ts test/tool-skill.test.ts test/tool-subagent.test.ts test/tool-edit.test.ts test/tool-patch.test.ts test/tool-execute.test.ts test/codemode.test.ts
+      - name: ACP contract
+        working-directory: packages/cli
+        run: bun test test/acp
+
+  windows:
+    name: Filesystem contract (windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - uses: ./.github/actions/setup-ripgrep
+      - name: Core filesystem contract
+        working-directory: packages/core
+        run: bun test test/tool-filesystem.test.ts test/filesystem-catalog.test.ts
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: true
