@@ -22,6 +22,7 @@ import { LocationLifecycle } from "./location-lifecycle.js"
 import { FileAccess } from "./file-access.js"
 import { ModelResolver } from "./model-resolver.js"
 import { Mcp } from "./mcp/index.js"
+import { McpDisabled } from "./mcp/disabled.js"
 import { Permission } from "./permission.js"
 import { Plugin } from "./plugin.js"
 import { PluginHooks } from "./plugin/hooks.js"
@@ -154,6 +155,8 @@ export function layer(ref: Location.Ref, options: Options = {}): Layer.Layer<Ser
     ...(options.replacements ?? []),
     Location.node.replace(Location.boundNode(ref)),
     InstancePlugins.node.replace(InstancePlugins.bound(options.plugins ?? [])),
+    // filesystem distribution: MCP disabled
+    McpDisabled.replacement,
   ]
 
   return LayerNode.compile(graph, { replacements, shared: Node.tags.values.global }).pipe(

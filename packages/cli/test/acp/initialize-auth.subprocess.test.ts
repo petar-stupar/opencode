@@ -10,7 +10,7 @@ describe("acp initialize/auth subprocess", () => {
     expect(initialized.protocolVersion).toBe(1)
     expect(initialized.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true)
     expect(initialized.agentCapabilities?.promptCapabilities?.image).toBe(true)
-    expect(initialized.agentCapabilities?.mcpCapabilities?.http).toBe(true)
+    expect(initialized.agentCapabilities?.mcpCapabilities?.http).toBe(false)
     expect(initialized.agentCapabilities?.mcpCapabilities?.sse).toBe(false)
     expect(initialized.agentCapabilities?.loadSession).toBe(true)
     expect(initialized.agentCapabilities?.sessionCapabilities?.close).toEqual({})

@@ -170,7 +170,7 @@ export function make(input: {
         protocolVersion: 1,
         agentCapabilities: {
           loadSession: true,
-          mcpCapabilities: { http: true, sse: false },
+          mcpCapabilities: { http: false, sse: false },
           promptCapabilities: { embeddedContext: true, image: true },
           sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, resume: {} },
           _meta: { [ACPTranslate.ChildSessionUpdatesCapability]: true },

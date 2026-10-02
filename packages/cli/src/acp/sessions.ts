@@ -94,6 +94,12 @@ export const make = Effect.fnUntraced(function* (input: {
 
   const registerMcp = (attached: Attached, servers: readonly McpServer[]) =>
     Effect.suspend(() => {
+      // filesystem distribution: MCP disabled entirely; refuse rather than silently drop the servers.
+      if (servers.length > 0)
+        return new ACPError.InvalidRequestError({
+          message: "MCP servers are disabled in this distribution",
+          field: "mcpServers",
+        })
       const registered = registeredMcp.get(attached.id) ?? new Set<string>()
       registeredMcp.set(attached.id, registered)
       return Effect.forEach(

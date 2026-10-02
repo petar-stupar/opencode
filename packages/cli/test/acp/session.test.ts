@@ -24,7 +24,7 @@ describe("acp session lifecycle over the wire", () => {
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
-        mcpCapabilities: { http: true, sse: false },
+        mcpCapabilities: { http: false, sse: false },
         promptCapabilities: { embeddedContext: true, image: true },
         sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, resume: {} },
         _meta: { "opencode/child-session-updates": true },
@@ -44,24 +44,16 @@ describe("acp session lifecycle over the wire", () => {
     })
   })
 
-  test("creates a v2 session, registers mcp, and publishes commands", async () => {
+  test("creates a v2 session and publishes commands", async () => {
     await using acp = await startWire()
     acp.server.catalog.commands = [{ name: "review" }]
     await acp.initialize()
 
-    const result = await acp.newSession("/workspace", [
-      { name: "docs", command: "bun", args: ["docs.ts"], env: [{ name: "TOKEN", value: "x" }] },
-    ])
+    const result = await acp.newSession("/workspace")
 
     expect(acp.server.sessions.get(result.sessionId)?.location.directory).toBe("/workspace")
     expect(result.configOptions?.map((option) => option.id)).toEqual(["model", "effort", "mode"])
-    expect(acp.server.mcp).toEqual([
-      {
-        name: "docs",
-        directory: "/workspace",
-        config: { type: "local", command: ["bun", "docs.ts"], environment: { TOKEN: "x" } },
-      },
-    ])
+    expect(acp.server.mcp).toEqual([])
     expect(await acp.waitForUpdate((item) => item.update.sessionUpdate === "available_commands_update")).toEqual({
       sessionId: result.sessionId,
       update: {
@@ -292,14 +284,13 @@ describe("acp session lifecycle over the wire", () => {
     expect(acp.logs).toEqual([])
   })
 
-  test("converts MCP configs and deduplicates registrations per session and config", async () => {
+  test("rejects MCP server registration because MCP is disabled", async () => {
     const local: McpServer = {
       name: "tools",
       command: "bun",
       args: ["server.ts"],
       env: [{ name: "TOKEN", value: "x" }],
     }
-    const changed: McpServer = { ...local, args: ["changed.ts"] }
     const remote: McpServer = {
       type: "http",
       name: "docs",
@@ -309,27 +300,19 @@ describe("acp session lifecycle over the wire", () => {
     await using acp = await startWire()
     await acp.initialize()
 
-    const first = await acp.newSession("/workspace", [local, local, remote])
-    await acp.request("session/resume", { cwd: "/workspace", sessionId: first.sessionId, mcpServers: [local, remote] })
-    await acp.request("session/resume", { cwd: "/workspace", sessionId: first.sessionId, mcpServers: [changed] })
-    await acp.newSession("/workspace", [local])
+    expect(await rpcError(acp.newSession("/workspace", [local, remote]))).toMatchObject({
+      code: -32602,
+      message: expect.stringContaining("MCP servers are disabled"),
+    })
+    expect(acp.server.mcp).toEqual([])
 
-    const localConfig = (args: string[]) => ({
-      name: "tools",
-      directory: "/workspace",
-      config: { type: "local", command: ["bun", ...args], environment: { TOKEN: "x" } },
-    })
-    expect(acp.server.mcp).toHaveLength(4)
-    expect(acp.server.mcp.filter((item) => item.name === "tools")).toEqual([
-      localConfig(["server.ts"]),
-      localConfig(["changed.ts"]),
-      localConfig(["server.ts"]),
-    ])
-    expect(acp.server.mcp.find((item) => item.name === "docs")).toEqual({
-      name: "docs",
-      directory: "/workspace",
-      config: { type: "remote", url: "https://example.com/mcp", headers: { Authorization: "Bearer x" }, oauth: false },
-    })
+    const created = await acp.newSession()
+    expect(
+      await rpcError(
+        acp.request("session/resume", { cwd: "/workspace", sessionId: created.sessionId, mcpServers: [local] }),
+      ),
+    ).toMatchObject({ code: -32602, message: expect.stringContaining("MCP servers are disabled") })
+    expect(acp.server.mcp).toEqual([])
   })
   test("leaves a session detached when re-attaching it fails", async () => {
     const broken: McpServer = { name: "broken", command: "bun", args: [], env: [] }
@@ -348,7 +331,7 @@ describe("acp session lifecycle over the wire", () => {
       await rpcError(
         acp.request("session/resume", { cwd: "/workspace", sessionId: failed.sessionId, mcpServers: [broken] }),
       ),
-    ).toMatchObject({ code: -32603 })
+    ).toMatchObject({ code: -32602 })
     const since = acp.updates.length
     acp.server.catalog.models = [testModel]
     acp.server.send(ephemeralEvent("model.updated", {}))
