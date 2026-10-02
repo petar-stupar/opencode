@@ -1,13 +1,14 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { expect } from "bun:test"
-import { Effect, Schedule } from "effect"
+import { Effect } from "effect"
 import { tmpdirScoped } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { startServer } from "./fixture/server"
 
 it.live(
-  "browsing parents and siblings reuses the current Location and its MCP process",
+  // filesystem distribution: MCP is disabled, so the configured server must never start.
+  "browsing parents and siblings reuses the current Location and never starts a configured MCP process",
   () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped()
@@ -56,12 +57,8 @@ it.live(
 
       yield* list(".")
       expect(yield* loaded).toEqual([{ directory: current }])
-      expect(
-        yield* count.pipe(
-          Effect.repeat({ while: (n) => n === 0, schedule: Schedule.spaced("25 millis") }),
-          Effect.timeout("5 seconds"),
-        ),
-      ).toBe(1)
+      yield* Effect.sleep("250 millis")
+      expect(yield* count).toBe(0)
 
       yield* list("..")
       const sibling = yield* list("../sibling")
@@ -73,7 +70,7 @@ it.live(
       yield* list("../sibling/nested")
       yield* list("../sibling")
       expect(yield* loaded).toEqual([{ directory: current }])
-      expect(yield* count).toBe(1)
+      expect(yield* count).toBe(0)
     }),
   15_000,
 )
