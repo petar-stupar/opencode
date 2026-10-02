@@ -94,8 +94,8 @@ jobs:
           git config --global user.email "bot@opencode.ai"
           git config --global user.name "opencode"
 
-      - name: Prepare Windows test dependencies
-        if: runner.os == 'Windows'
+      - name: Prepare test dependencies
+        if: runner.os == 'Windows' || github.repository != 'anomalyco/opencode'
         uses: ./.github/actions/setup-ripgrep
 
       - name: Cache Turbo

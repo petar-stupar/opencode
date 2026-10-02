@@ -1,12 +1,35 @@
 name: Setup ripgrep
-description: Provision the pinned Windows test dependency before timed tests start
+description: Provision the pinned ripgrep release on runners that do not ship it, before timed tests start
 runs:
   using: composite
   steps:
-    - name: Install ripgrep
+    - name: Install ripgrep (Windows)
+      if: runner.os == 'Windows'
       shell: pwsh
       run: |
         Invoke-WebRequest -Uri 'https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip' -OutFile "$env:RUNNER_TEMP/ripgrep.zip"
         Expand-Archive -LiteralPath "$env:RUNNER_TEMP/ripgrep.zip" -DestinationPath "$env:RUNNER_TEMP/ripgrep" -Force
         "$env:RUNNER_TEMP/ripgrep/ripgrep-15.1.0-x86_64-pc-windows-msvc" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         & "$env:RUNNER_TEMP/ripgrep/ripgrep-15.1.0-x86_64-pc-windows-msvc/rg.exe" --version
+    - name: Install ripgrep (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v rg >/dev/null 2>&1; then
+          rg --version
+          exit 0
+        fi
+        case "$(uname -s)-$(uname -m)" in
+          Linux-x86_64) target=x86_64-unknown-linux-musl ;;
+          Linux-aarch64|Linux-arm64) target=aarch64-unknown-linux-gnu ;;
+          Darwin-arm64) target=aarch64-apple-darwin ;;
+          Darwin-x86_64) target=x86_64-apple-darwin ;;
+          *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+        esac
+        name="ripgrep-15.1.0-${target}"
+        curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/${name}.tar.gz" -o "$RUNNER_TEMP/ripgrep.tar.gz"
+        mkdir -p "$RUNNER_TEMP/ripgrep"
+        tar -xzf "$RUNNER_TEMP/ripgrep.tar.gz" -C "$RUNNER_TEMP/ripgrep"
+        echo "$RUNNER_TEMP/ripgrep/${name}" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/ripgrep/${name}/rg" --version
